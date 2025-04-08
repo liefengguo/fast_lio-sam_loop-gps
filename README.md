@@ -1,5 +1,5 @@
 # fast_lio-sam_loop-gps
-**fast-lio with loop factor and GPS factor for back-end optimization. lio and back-end implementation are moved to "include/core" for better readability.**
+**Fast-lio with loop factor and GPS factor for back-end optimization. lio and back-end implementation are moved to "include/core" for better readability.**
 
 ## 0. Features
 GPS information is integrated into fast_lio-sam_loop-gps to build a consistent map in a large-scale environment. We mainly follow the implementation in [LIO-SAM-6axis](https://github.com/JokerJohn/LIO_SAM_6AXIS) about the system init when we use a 6-axis imu. In addition, we add a two-manual parameter (manual_gps_init+manual_init_yaw) when you are sure about the transformation between the imu and ENU coordinate system. The rebuild ikd-tree modes can still be chosen when the loop closes（correct_fe_en parameter in config file）. 
