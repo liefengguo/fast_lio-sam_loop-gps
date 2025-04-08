@@ -4,6 +4,8 @@
 ## 0. Features
 GPS information is integrated into fast_lio-sam_loop-gps to build a consistent map in a large-scale environment. We mainly follow the implementation in [LIO-SAM-6axis](https://github.com/JokerJohn/LIO_SAM_6AXIS) about the system init when we use a 6-axis imu. In addition, we add a two-manual parameter (manual_gps_init+manual_init_yaw) when you are sure about the transformation between the imu and ENU coordinate system. The rebuild ikd-tree modes can still be chosen when the loop closes（correct_fe_en parameter in config file）. 
 
+The system computing efficiency is better than [LIO-SAM-6axis](https://github.com/JokerJohn/LIO_SAM_6AXIS) for incrementally maintaining about ikd-tree map in the odometry. So, using correct_fe_en == false is better for most cases.
+
 ## 1. Prerequisites
 ### 1.0 **gcc** and **g++**
 
