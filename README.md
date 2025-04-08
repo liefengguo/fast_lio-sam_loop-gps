@@ -6,7 +6,7 @@ GPS information is integrated into fast_lio-sam_loop-gps to build a consistent m
 
 The system computing efficiency is better than [LIO-SAM-6axis](https://github.com/JokerJohn/LIO_SAM_6AXIS) for incrementally maintaining about ikd-tree map in the odometry. So, using correct_fe_en == false is better for most cases.
 
-![Picture](https://github.com/Hero941215/fast_lio-sam_loop-gps/blob/main/fast_lio-sam_loop-gps.png))
+![Picture](https://github.com/Hero941215/fast_lio-sam_loop-gps/blob/main/fast_lio-sam_loop-gps.png
 
 ## 1. Prerequisites
 ### 1.0 **gcc** and **g++**
