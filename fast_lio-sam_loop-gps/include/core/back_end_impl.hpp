@@ -818,7 +818,7 @@ bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &
         downSizeFilterSurf2.setLeafSize(global_map_server_leaf_size, global_map_server_leaf_size, global_map_server_leaf_size);
 		downSizeFilterSurf2.setInputCloud(globalRawCloud);	
 		downSizeFilterSurf2.filter(*globalRawCloudDS);
-        mtx.lock();
+        mtx.unlock();
 
 		*globalMapCloud += *globalRawCloudDS;
 		std::cout << "map size: " << globalMapCloud->size() << std::endl;
@@ -829,7 +829,7 @@ bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &
 		}
 		pcl::io::savePCDFileASCII(save_directory + "globalmap_lidar_feature.pcd", *globalMapCloud);
 		cout << "****************************************************" << endl;
-        cout << "Saving map to pcd files completed: " << endl;
+        cout << "Saving map to pcd files completed!" << endl;
 
 		return true;
 }
