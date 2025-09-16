@@ -864,7 +864,6 @@ double eps_cam)
             mtxGpsInfo.unlock();
             break;
         } else {
-            
             hasGPS = true;
             aligedGps = gpsQueue.front();
             gpsQueue.pop_front();

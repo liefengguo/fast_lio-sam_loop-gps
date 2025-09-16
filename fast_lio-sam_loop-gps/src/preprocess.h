@@ -10,7 +10,7 @@ using namespace std;
 typedef pcl::PointXYZINormal PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
-enum LID_TYPE{AVIA = 1, VELO16, OUST64, PANDAR32, RS16}; //{1, 2, 3, 4, 5}
+enum LID_TYPE{AVIA = 1, VELO16, OUST64, PANDAR32, RS16, MERGED}; //{1..6}
 enum TIME_UNIT{SEC = 0, MS = 1, US = 2, NS = 3};
 enum Feature{Nor, Poss_Plane, Real_Plane, Edge_Jump, Edge_Plane, Wire, ZeroPoint};
 
@@ -127,6 +127,51 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(robosense_ros::Point,
                                           (double, timestamp, timestamp)
 )
 
+namespace custom_points
+{
+  struct Point
+  {
+    enum FEATURE
+    {
+      ORDINARY,
+      CYLINDER,
+      INLIER,
+      FLAT,
+      LESS_FLAT,
+      LESS_SHARP,
+      SHARP,
+      COUNT,
+    };
+
+    PCL_ADD_POINT4D;
+    PCL_ADD_INTENSITY;
+    std::uint16_t ring;
+    std::uint16_t azimuth;
+    std::uint16_t feature;
+
+    Point()
+    {
+      x = y = z = 0.f;
+      intensity = 0.f;
+      ring = 0;
+      azimuth = 0;
+      feature = FEATURE::ORDINARY;
+    }
+
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  } EIGEN_ALIGN16;
+}  // namespace custom_points
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(custom_points::Point,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (std::uint16_t, ring, ring)
+    (std::uint16_t, azimuth, azimuth)
+    (std::uint16_t, feature, feature)
+)
+
 struct PointXYZIRPYT
 {
   PCL_ADD_POINT4D
@@ -177,6 +222,7 @@ class Preprocess
   void rslidar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);   // 对rs-lidar进行处理，不提取特征 
   void pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+  void merged_cloud_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void give_feature(PointCloudXYZI &pl, vector<orgtype> &types);
   void pub_func(PointCloudXYZI &pl, const ros::Time &ct);
   int  plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i, uint &i_nex, Eigen::Vector3d &curr_direct);

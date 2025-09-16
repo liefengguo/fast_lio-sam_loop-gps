@@ -139,12 +139,14 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
+    }else{
+        // ROS_INFO("Standard cloud input time: %lf", msg->header.stamp.toSec());
     }
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre->process(msg, ptr);
     lidar_buffer.push_back(ptr);
-    std::cout << "cur pc size: " << ptr->points.size() << std::endl;
+    // std::cout << "cur pc size: " << ptr->points.size() << std::endl;
 
     time_buffer.push_back(msg->header.stamp.toSec());
     last_timestamp_lidar = msg->header.stamp.toSec();

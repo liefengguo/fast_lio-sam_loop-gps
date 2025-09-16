@@ -85,6 +85,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   case RS16:
     rslidar_handler(msg);
     break;
+
+  case MERGED:
+    merged_cloud_handler(msg);
+    break;
   
   default:
     printf("Error LiDAR Type");
@@ -224,6 +228,49 @@ void Preprocess::pandar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
 		pl_surf.points.push_back(added_pt);
 	}
 
+}
+
+void Preprocess::merged_cloud_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+{
+  pl_surf.clear();
+
+  pcl::PointCloud<custom_points::Point> pl_orig;
+  pcl::fromROSMsg(*msg, pl_orig);
+  const int plsize = static_cast<int>(pl_orig.points.size());
+
+  if (plsize == 0)
+  {
+    ROS_WARN("Merged cloud input has no points");
+    return;
+  }else{
+    // ROS_INFO("Merged cloud input has %d points", plsize);
+  }
+
+  pl_surf.points.reserve(plsize);
+
+  for (int i = 0; i < plsize; ++i)
+  {
+    PointType added_pt;
+    added_pt.x = pl_orig.points[i].x;
+    added_pt.y = pl_orig.points[i].y;
+    added_pt.z = pl_orig.points[i].z;
+    added_pt.intensity = pl_orig.points[i].intensity;
+    added_pt.normal_x = static_cast<float>(pl_orig.points[i].feature);
+    added_pt.normal_y = static_cast<float>(pl_orig.points[i].azimuth);
+    added_pt.normal_z = static_cast<float>(pl_orig.points[i].ring);
+    added_pt.curvature = 0.f;
+
+    if (i % point_filter_num != 0) continue;
+
+    const double range_sq = added_pt.x * added_pt.x +
+                            added_pt.y * added_pt.y +
+                            added_pt.z * added_pt.z;
+    if (range_sq <= blind * blind) continue;
+
+    pl_surf.points.emplace_back(added_pt);
+  }
+
+  pl_surf.points.shrink_to_fit();
 }
 
 void Preprocess::rslidar_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)

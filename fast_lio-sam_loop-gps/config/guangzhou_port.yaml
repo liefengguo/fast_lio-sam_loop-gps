@@ -1,0 +1,86 @@
+common:
+    lid_topic:  "/lidar_odom_node/meta_cloud"
+    imu_topic:  "/ins_driver/imu"
+    gps_topic:  "/ins_driver/fix"
+    gps_odom_topic: "/udi_zpmc_loc_ns/ins_odom_huace"
+    time_sync_en: false
+    time_offset_lidar_to_imu: 0.0
+frame:
+    odometry_frame: "odom"
+    map_frame:      "map"
+
+preprocess:
+    lidar_type: 6                # 1 Livox, 2 Velodyne, 3 Ouster, 4 Pandar, 5 Robosense, 6 merged cloud
+    scan_line: 16
+    scan_rate: 10
+    timestamp_unit: 0
+    blind: 2.0
+
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree:    180
+    det_range:     100.0
+    extrinsic_est_en:  false
+    extrinsic_T: [ 0, 0, 0]
+    extrinsic_R: [ 1, 0, 0,
+                   0, 1, 0,
+                   0, 0, 1]
+
+publish:
+    path_odom_en:  true
+    path_map_en:   true
+    scan_publish_en:  true
+    dense_publish_en: false
+    scan_bodyframe_pub_en: true
+    scan_lidarframe_pub_en: true
+    keyframe_pub_en: true
+
+pcd_save:
+    pcd_save_en: true
+    interval: -1
+
+time_save:
+    timestamp_save_en:  false
+
+odometry_mode:
+    correct_fe_en: false
+
+keyframe:
+    interval_th: 0.15
+    trans_th: 0.3
+    rot_rad_th: 0.0872
+
+loop:
+    loop_en: true
+    loop_frequency: 1.0
+    sparse_raw_point_cloud_en: true
+    history_kf_search_radius: 25.0
+    history_kf_search_time_diff: 25.0
+    history_kf_search_num: 25
+    history_kf_fitness_score: 0.4
+    surrounding_kf_search_radius: 30.0
+    surrounding_kf_density: 2.0
+    mapping_surf_leaf_size: 0.4
+
+gps:
+    gps_en: true
+    gps_frequence: 10
+    gpc_factor_init_num: 20
+    use_gps_elevation: true
+    gps_cov_threshold: 8
+    pose_cov_threshold: 25.0
+    gps_distance: 0.5
+    manual_gps_init: false
+    manual_init_yaw: -1.57
+
+visualization:
+    global_map_visualization_search_radius: 1000.0
+    global_map_visualization_pose_density:  10.0
+    global_map_visualization_leaf_size:     0.5
+
+service:
+    save_directory: "/home/glf/proj/fast_lio-sam_loop-gps_ws/"
+    global_map_server_leaf_size: 0.4

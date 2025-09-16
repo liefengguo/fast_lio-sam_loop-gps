@@ -5,7 +5,7 @@ project(fast_lio_sam_loop)
 SET(CMAKE_BUILD_TYPE "Realese")  
 
 ADD_COMPILE_OPTIONS(-std=c++14 )
-set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
+set( CMAKE_CXX_FLAGS "-std=c++14" )
 
 add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
 
@@ -52,6 +52,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   eigen_conversions
 )
+find_package(Boost REQUIRED COMPONENTS serialization thread timer chrono)
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
@@ -62,6 +63,7 @@ find_package(GTSAM REQUIRED QUIET)
 add_subdirectory(./ThirdParty/GeographicLib/)
 
 message(Eigen: ${EIGEN3_INCLUDE_DIR})
+find_package(PythonLibs REQUIRED)
 
 include_directories(
 	${catkin_INCLUDE_DIRS} 

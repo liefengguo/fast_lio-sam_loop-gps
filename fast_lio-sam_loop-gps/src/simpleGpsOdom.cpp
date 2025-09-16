@@ -18,7 +18,7 @@ class GNSSOdom
 public:
     GNSSOdom(ros::NodeHandle &_nh) {
         nh = _nh;
-        nh.param<std::string>("common/gps_topic", gps_topic, "/123");
+        nh.param<std::string>("common/gps_topic", gps_topic, "/ins_driver/fix");
         nh.param<std::string>("frame/map_frame", map_frame, "map");
 
         std::cout << "gps topic: " << gps_topic << std::endl;
@@ -34,6 +34,7 @@ private:
     void GNSSCB(const sensor_msgs::NavSatFixConstPtr &msg) {
         // std::cout << "gps status: " << msg->status.status << std::endl;
         if (std::isnan(msg->latitude + msg->longitude + msg->altitude)) {
+            ROS_INFO("gps nan");
             return;
         }
         Eigen::Vector3d lla(msg->latitude, msg->longitude, msg->altitude);
@@ -67,7 +68,7 @@ private:
         // LLA->ENU, better accuacy than gpsTools especially for z value
         geo_converter.Forward(lla[0], lla[1], lla[2], x, y, z);
         Eigen::Vector3d enu(x, y, z);
-        if (abs(enu.x()) > 10000 || abs(enu.x()) > 10000 || abs(enu.x()) > 10000) {
+        if (abs(enu.x()) > 10000 || abs(enu.y()) > 10000 || abs(enu.z()) > 10000) {// BUGx y z ?
             /** check your lla coordinate */
             ROS_INFO("Error ogigin : %f, %f, %f", enu(0), enu(1), enu(2));
             return;
@@ -86,7 +87,7 @@ private:
             std::cout << "gps odom yaw: " << yaw << std::endl;
         }
         
-        // std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
+        std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
 
         if(!orientationReady)
         {
