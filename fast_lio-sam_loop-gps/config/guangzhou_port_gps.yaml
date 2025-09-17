@@ -2,6 +2,7 @@ common:
     lid_topic:  "/lidar_odom_node/meta_cloud"
     imu_topic:  "/ins_driver/imu"
     gps_topic:  "/ins_driver/fix"
+    # gps_odom_topic: "/udi_zpmc_loc_ns/ins_odom_huace"
     time_sync_en: false
     time_offset_lidar_to_imu: 0.0
 frame:
@@ -69,7 +70,7 @@ loop:
 #--------------------------------------------------------------- gps -------------------------------------------------------
 
 gps:
-    gps_en: false
+    gps_en: true
     gps_frequence: 10
     gpc_factor_init_num: 20
     use_gps_elevation: true

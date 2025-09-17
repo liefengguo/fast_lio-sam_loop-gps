@@ -243,7 +243,7 @@ void Preprocess::merged_cloud_handler(const sensor_msgs::PointCloud2::ConstPtr &
     ROS_WARN("Merged cloud input has no points");
     return;
   }else{
-    // ROS_INFO("Merged cloud input has %d points", plsize);
+    // ROS_INFO("before Merged cloud input has %d points", plsize);
   }
 
   pl_surf.points.reserve(plsize);

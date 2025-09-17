@@ -109,8 +109,8 @@ double time_diff_lidar_to_imu = 0.0;
 mutex mtx_buffer;
 condition_variable sig_buffer;           // https://blog.csdn.net/weixin_43369786/article/details/129225369
 
-string root_dir = ROOT_DIR;                                // 设置根目录
-string map_file_path, lid_topic, imu_topic, gps_odom_topic;  // 设置地图文件路径以及传感器topic
+string root_dir = ROOT_DIR;                  // 设置根目录
+string map_file_path, lid_topic, imu_topic;  // 设置地图文件路径，雷达topic，imu topic
 
 
 double res_mean_last = 0.05, total_residual = 0.0;              // 残差平均值，残差总和
@@ -347,7 +347,6 @@ int main(int argc, char** argv)
     nh.param<string>("map_file_path", map_file_path,"");
     nh.param<string>("common/lid_topic", lid_topic,"/livox/lidar");
     nh.param<string>("common/imu_topic", imu_topic,"/livox/imu");
-    nh.param<string>("common/gps_odom_topic", gps_odom_topic, "/gps_odom");
     nh.param<bool>("common/time_sync_en", time_sync_en, false);
     nh.param<double>("common/time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
     nh.param<double>("filter_size_corner", filter_size_corner_min,0.5);
@@ -518,7 +517,7 @@ int main(int argc, char** argv)
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
     // ros::Subscriber sub_pcl = nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
 
-    subGPS = nh.subscribe<nav_msgs::Odometry>(gps_odom_topic, 200, gps_handler);
+    subGPS = nh.subscribe<nav_msgs::Odometry>("/gps_odom", 200, gps_handler);
 
     /*** ROS publisher initialization ***/
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
@@ -771,6 +770,8 @@ int main(int argc, char** argv)
             s_vec5.push_back(s_plot[i]);
         }
         fclose(fp2);
+    }else{
+        ROS_INFO("You didn't turn on the runtime_pos_log function!");
     }
 
     loopthread.join(); //  分离线程
