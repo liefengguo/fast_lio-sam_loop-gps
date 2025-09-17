@@ -375,15 +375,6 @@ int main(int argc, char** argv)
     nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
     nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
 
-    // if (p_pre->lidar_type == RS16 &&
-    //     (lid_topic == "/lidar_odom_node/meta_cloud" ||
-    //      lid_topic.find("meta_cloud") != string::npos))
-    // {
-    //     ROS_INFO("Detected merged cloud input, switching preprocess to MERGED mode");
-    //     p_pre->lidar_type = MERGED;
-    // }
-
-    cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
 
     // ***************************** frame coordinate *****************************
     nh.param<string>("frame/odometry_frame", odometry_frame, "odom");

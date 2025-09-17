@@ -36,7 +36,7 @@ publish:
     dense_publish_en: false
     scan_bodyframe_pub_en: true
     scan_lidarframe_pub_en: true
-    keyframe_pub_en: true
+    keyframe_pub_en: true   # true: 进行关键帧检测，同时发布lidar下的点云和位姿。这里开了才能进行回环哦
 
 pcd_save:
     pcd_save_en: true
@@ -44,26 +44,30 @@ pcd_save:
 
 time_save:
     timestamp_save_en:  false
+#------------------------------------------------------ loop closing ---------------------------------------------
 
 odometry_mode:
     correct_fe_en: false
 
 keyframe:
-    interval_th: 0.15
-    trans_th: 0.3
-    rot_rad_th: 0.0872
+    interval_th: 0.15   # unit second
+    trans_th: 0.3       # unit meters
+    rot_rad_th: 0.0872  # unit radian
 
 loop:
     loop_en: true
     loop_frequency: 1.0
     sparse_raw_point_cloud_en: true
+    #  ------ icp matching ------ 
     history_kf_search_radius: 25.0
     history_kf_search_time_diff: 25.0
     history_kf_search_num: 25
     history_kf_fitness_score: 0.4
+    #  ------ ikd-tree map rebuild ------
     surrounding_kf_search_radius: 30.0
     surrounding_kf_density: 2.0
     mapping_surf_leaf_size: 0.4
+#--------------------------------------------------------------- gps -------------------------------------------------------
 
 gps:
     gps_en: true

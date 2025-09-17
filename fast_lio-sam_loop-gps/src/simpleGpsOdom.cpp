@@ -84,10 +84,10 @@ private:
             prev_pose_left = enu;
             orientationReady = true;
 
-            std::cout << "gps odom yaw: " << yaw << std::endl;
+            // std::cout << "gps odom yaw: " << yaw << std::endl;
         }
         
-        std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
+        // std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
 
         if(!orientationReady)
         {
