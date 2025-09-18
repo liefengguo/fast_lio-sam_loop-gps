@@ -2,6 +2,7 @@ common:
     lid_topic:  "/velodyne_points"
     imu_topic:  "/imu/data"
     gps_topic:  "/fix"
+    gps_time_offset: 0.0
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
     time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
                                   # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
@@ -99,7 +100,6 @@ visualization:
 service:
     save_directory: "/home/glf/SLAM/fast_lio-sam_loop-gps_ws/src/fast_lio-sam_loop-gps/"
     global_map_server_leaf_size: 0.4
-
 
 
 

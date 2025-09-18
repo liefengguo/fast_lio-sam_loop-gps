@@ -20,6 +20,7 @@ public:
         nh = _nh;
         nh.param<std::string>("common/gps_topic", gps_topic, "/ins_driver/fix");
         nh.param<std::string>("frame/map_frame", map_frame, "map");
+        nh.param<double>("common/gps_time_offset", gps_time_offset, 0.0);
 
         // std::cout << "gps topic: " << gps_topic << std::endl;
 
@@ -94,8 +95,8 @@ private:
             ROS_WARN("waiting init origin yaw");
             return;
         }
-        ros::Time stamp_add = msg->header.stamp + ros::Duration(3.116);
-        ROS_INFO("gps stamp_add_stamp: %f", stamp_add.toSec());
+        ros::Time stamp_add = msg->header.stamp + ros::Duration(gps_time_offset);
+        ROS_DEBUG_STREAM("gps stamp_add_stamp: " << stamp_add.toSec());
         /** pub gps odometry*/
         nav_msgs::Odometry odom_msg;
         odom_msg.header.stamp = stamp_add;
@@ -145,6 +146,7 @@ private:
 
     std::string gps_topic;
     std::string map_frame;
+    double gps_time_offset = 0.0;
 
     bool initENU = false;
     bool orientationReady = false;
