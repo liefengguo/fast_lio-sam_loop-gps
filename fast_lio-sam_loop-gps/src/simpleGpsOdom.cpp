@@ -21,7 +21,7 @@ public:
         nh.param<std::string>("common/gps_topic", gps_topic, "/ins_driver/fix");
         nh.param<std::string>("frame/map_frame", map_frame, "map");
 
-        std::cout << "gps topic: " << gps_topic << std::endl;
+        // std::cout << "gps topic: " << gps_topic << std::endl;
 
         gpsSub = nh.subscribe(gps_topic, 1000, &GNSSOdom::GNSSCB, this,
                               ros::TransportHints().tcpNoDelay());
@@ -68,7 +68,7 @@ private:
         // LLA->ENU, better accuacy than gpsTools especially for z value
         geo_converter.Forward(lla[0], lla[1], lla[2], x, y, z);
         Eigen::Vector3d enu(x, y, z);
-        if (abs(enu.x()) > 10000 || abs(enu.y()) > 10000 || abs(enu.z()) > 10000) {// BUGx y z ?
+        if (abs(enu.x()) > 10000 || abs(enu.x()) > 10000 || abs(enu.x()) > 10000) {// BUGx y z ?
             /** check your lla coordinate */
             ROS_INFO("Error ogigin : %f, %f, %f", enu(0), enu(1), enu(2));
             return;
@@ -84,7 +84,7 @@ private:
             prev_pose_left = enu;
             orientationReady = true;
 
-            // std::cout << "gps odom yaw: " << yaw << std::endl;
+            std::cout << "gps odom yaw: " << yaw << std::endl;
         }
         
         // std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
@@ -94,10 +94,11 @@ private:
             ROS_WARN("waiting init origin yaw");
             return;
         }
-
+        ros::Time stamp_add = msg->header.stamp + ros::Duration(3.116);
+        ROS_INFO("gps stamp_add_stamp: %f", stamp_add.toSec());
         /** pub gps odometry*/
         nav_msgs::Odometry odom_msg;
-        odom_msg.header.stamp = msg->header.stamp;
+        odom_msg.header.stamp = stamp_add;
         odom_msg.header.frame_id = map_frame;
         odom_msg.child_frame_id = "gps";
 
@@ -120,7 +121,7 @@ private:
         /** just for gnss visualization */
         // publish path
         left_path.header.frame_id = map_frame;
-        left_path.header.stamp = msg->header.stamp;
+        left_path.header.stamp = stamp_add;
         geometry_msgs::PoseStamped pose;
         pose.header = left_path.header;
         pose.pose.position.x = enu(0);

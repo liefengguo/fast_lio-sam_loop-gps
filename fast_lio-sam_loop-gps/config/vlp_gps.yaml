@@ -97,7 +97,7 @@ visualization:
 #------------------------------------------------------ other ---------------------------------------------
 
 service:
-    save_directory: "/home/mtcjyb/Documents/"
+    save_directory: "/home/glf/SLAM/fast_lio-sam_loop-gps_ws/src/fast_lio-sam_loop-gps/"
     global_map_server_leaf_size: 0.4
 
 

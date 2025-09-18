@@ -837,6 +837,7 @@ bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &
 void gps_handler(const nav_msgs::Odometry::ConstPtr &gpsMsg)
 {
     if(use_gps) {
+        ROS_INFO("GPS_odom_timestamp: %f", gpsMsg->header.stamp.toSec());
         mtxGpsInfo.lock();
         gpsQueue.push_back(*gpsMsg);
         mtxGpsInfo.unlock();
@@ -853,6 +854,7 @@ double eps_cam)
 
     while (!gpsQueue.empty()) {
         mtxGpsInfo.lock();
+        // ROS_INFO("timestamp: %f, gps stamp: %f, eps_cam: %f", timestamp, gpsQueue.front().header.stamp.toSec(), eps_cam);
         if (gpsQueue.front().header.stamp.toSec() < timestamp - eps_cam) {
             // message too old
             std::cout << "message too old: " << timestamp-gpsQueue.front().header.stamp.toSec() << std::endl;
@@ -978,13 +980,15 @@ void update_initial_guess()
                 ROS_WARN("GPS init success");
                 
             }
+
+            if (!system_initialized) {
+        ROS_ERROR("system need to be initialized");
+        return;
+    }
         }
     }
 
-    if (!system_initialized) {
-        ROS_ERROR("sysyem need to be initialized");
-        return;
-    }
+
 }
 
 void add_gps_factor()

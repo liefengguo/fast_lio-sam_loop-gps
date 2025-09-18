@@ -144,6 +144,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+    ROS_INFO("standard_pcl_cbk timestamp: %f", msg->header.stamp.toSec());
     p_pre->process(msg, ptr);
     lidar_buffer.push_back(ptr);
     // std::cout << "cur pc size: " << ptr->points.size() << std::endl;
@@ -195,6 +196,7 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 {
     publish_count ++;
     // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
+    ROS_INFO("IMU got at: %lf", msg_in->header.stamp.toSec());
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
     msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);

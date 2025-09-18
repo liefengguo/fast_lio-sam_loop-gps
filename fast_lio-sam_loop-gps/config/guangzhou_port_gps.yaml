@@ -2,7 +2,6 @@ common:
     lid_topic:  "/lidar_odom_node/meta_cloud"
     imu_topic:  "/ins_driver/imu"
     gps_topic:  "/ins_driver/fix"
-    # gps_odom_topic: "/udi_zpmc_loc_ns/ins_odom_huace"
     time_sync_en: false
     time_offset_lidar_to_imu: 0.0
 frame:
@@ -43,7 +42,7 @@ pcd_save:
     interval: -1
 
 time_save:
-    timestamp_save_en:  false
+    timestamp_save_en:  true
 #------------------------------------------------------ loop closing ---------------------------------------------
 
 odometry_mode:
@@ -71,13 +70,13 @@ loop:
 
 gps:
     gps_en: true
-    gps_frequence: 10
-    gpc_factor_init_num: 20
+    gps_frequence: 20   # 10
+    gpc_factor_init_num: 20  # 20
     use_gps_elevation: true
     gps_cov_threshold: 8
     pose_cov_threshold: 25.0
     gps_distance: 0.5
-    manual_gps_init: true
+    manual_gps_init: false
     manual_init_yaw: 1.57
 
 visualization:
