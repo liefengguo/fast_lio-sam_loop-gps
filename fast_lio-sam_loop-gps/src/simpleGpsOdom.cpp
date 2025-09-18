@@ -85,7 +85,7 @@ private:
             prev_pose_left = enu;
             orientationReady = true;
 
-            std::cout << "gps odom yaw: " << yaw << std::endl;
+            // std::cout << "gps odom yaw: " << yaw << std::endl;
         }
         
         // std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
@@ -106,9 +106,12 @@ private:
         odom_msg.pose.pose.position.x = enu(0);
         odom_msg.pose.pose.position.y = enu(1);
         odom_msg.pose.pose.position.z = enu(2);
-        odom_msg.pose.covariance[0] = msg->position_covariance[0];
-        odom_msg.pose.covariance[7] = msg->position_covariance[4];
-        odom_msg.pose.covariance[14] = msg->position_covariance[8];
+        // odom_msg.pose.covariance[0] = msg->position_covariance[0];
+        // odom_msg.pose.covariance[7] = msg->position_covariance[4];
+        // odom_msg.pose.covariance[14] = msg->position_covariance[8];
+        odom_msg.pose.covariance[0] = 0.0124;
+        odom_msg.pose.covariance[7] = 0.0129;
+        odom_msg.pose.covariance[14] = 0.0155;
         odom_msg.pose.covariance[1] = lla[0];
         odom_msg.pose.covariance[2] = lla[1];
         odom_msg.pose.covariance[3] = lla[2];

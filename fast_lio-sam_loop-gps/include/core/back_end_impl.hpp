@@ -837,7 +837,14 @@ bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &
 void gps_handler(const nav_msgs::Odometry::ConstPtr &gpsMsg)
 {
     if(use_gps) {
-        ROS_INFO("GPS_odom_timestamp: %f", gpsMsg->header.stamp.toSec());
+        const double cov_x = gpsMsg->pose.covariance[0];
+        const double cov_y = gpsMsg->pose.covariance[7];
+        const double cov_z = gpsMsg->pose.covariance[14];
+        if (std::fabs(cov_x) < 1e-9 && std::fabs(cov_y) < 1e-9 && std::fabs(cov_z) < 1e-9)
+        {
+            ROS_WARN_THROTTLE(1.0, "GPS covariance xyz are all zero (stamp %.3f). This will break GTSAM optimization.", gpsMsg->header.stamp.toSec());
+        }
+        // ROS_INFO("GPS_odom_timestamp: %f", gpsMsg->header.stamp.toSec());
         mtxGpsInfo.lock();
         gpsQueue.push_back(*gpsMsg);
         mtxGpsInfo.unlock();
