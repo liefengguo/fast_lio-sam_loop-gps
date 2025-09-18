@@ -243,15 +243,11 @@ void Preprocess::merged_cloud_handler(const sensor_msgs::PointCloud2::ConstPtr &
     ROS_WARN("Merged cloud input has no points");
     return;
   }else{
-    // ROS_INFO("before Merged cloud input has %d points", plsize);
+    // ROS_INFO("beforeMerged cloud input has %d points", plsize);
   }
 
   pl_surf.points.reserve(plsize);
-  const double scan_period_ms = (SCAN_RATE > 0) ? (1000.0 / static_cast<double>(SCAN_RATE)) : 100.0;
-  const double full_turn_units = 36000.0;  // azimuth is stored in 1/100 degree units
-  double start_azimuth = static_cast<double>(pl_orig.points.front().azimuth);
-  double last_azimuth = start_azimuth;
-  double revolution_offset = 0.0;
+	double time_stamp = msg->header.stamp.toSec();
 
   for (int i = 0; i < plsize; ++i)
   {
@@ -263,23 +259,11 @@ void Preprocess::merged_cloud_handler(const sensor_msgs::PointCloud2::ConstPtr &
     added_pt.normal_x = static_cast<float>(pl_orig.points[i].feature);
     added_pt.normal_y = static_cast<float>(pl_orig.points[i].azimuth);
     added_pt.normal_z = static_cast<float>(pl_orig.points[i].ring);
+    // added_pt.curvature = 0.0f;
 
-    double current_azimuth = static_cast<double>(pl_orig.points[i].azimuth);
-    if (current_azimuth < last_azimuth)
-    {
-      revolution_offset += full_turn_units;
-    }
-
-    double azimuth_progress = (current_azimuth + revolution_offset) - start_azimuth;
-    if (azimuth_progress < 0.0)
-    {
-      azimuth_progress += full_turn_units;
-    }
-    double time_ms = (azimuth_progress / full_turn_units) * scan_period_ms;
-    added_pt.curvature = static_cast<float>(time_ms);
-
-    last_azimuth = current_azimuth;
-    ROS_INFO("azimuth_progress: %f, time_ms: %f", azimuth_progress, time_ms);
+    // ROS_INFO("pl_orig.points[i].ring: %f", pl_orig.points[i].ring);
+    // ROS_INFO("pl_orig.points[i].azimuth: %f", pl_orig.points[i].azimuth);
+    // ROS_INFO("pl_orig.points[i].feature: %f", pl_orig.points[i].feature);
 
     if (i % point_filter_num != 0) continue;
 
