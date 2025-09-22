@@ -71,14 +71,14 @@ loop:
 
 gps:
     gps_en: true
-    gps_frequence: 20   # 10
+    gps_frequence: 10   # 10
     gpc_factor_init_num: 20  # 20
     use_gps_elevation: true
     gps_cov_threshold: 8
     pose_cov_threshold: 25.0
     gps_distance: 0.5
-    manual_gps_init: false
-    manual_init_yaw: 1.57
+    manual_gps_init: true
+    manual_init_yaw: 1.76931
 
 visualization:
     global_map_visualization_search_radius: 1000.0

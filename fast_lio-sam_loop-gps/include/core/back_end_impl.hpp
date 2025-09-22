@@ -1028,7 +1028,7 @@ void add_gps_factor()
         Eigen::Vector3d LLA(thisGPS.pose.covariance[1], thisGPS.pose.covariance[2], thisGPS.pose.covariance[3]);
         geo_converter.Forward(LLA[0], LLA[1], LLA[2], gps_x, gps_y, gps_z);
 
-        if (1) {
+        if (0) {
             ROS_INFO("curr LLA : %f, %f , %f", LLA[0], LLA[1], LLA[2]);
             ROS_INFO("curr gps pose: %f, %f , %f", gps_x, gps_y, gps_z);
             ROS_INFO("curr gps cov: %f, %f , %f", thisGPS.pose.covariance[0],

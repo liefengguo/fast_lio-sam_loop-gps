@@ -24,7 +24,7 @@ public:
 
         // std::cout << "gps topic: " << gps_topic << std::endl;
 
-        gpsSub = nh.subscribe(gps_topic, 1000, &GNSSOdom::GNSSCB, this,
+        gpsSub = nh.subscribe(gps_topic, 100, &GNSSOdom::GNSSCB, this,
                               ros::TransportHints().tcpNoDelay());
         left_odom_pub = nh.advertise<nav_msgs::Odometry>("/gps_odom", 100, false);
         init_origin_pub = nh.advertise<nav_msgs::Odometry>("/init_odom", 10000, false);
@@ -85,7 +85,7 @@ private:
             prev_pose_left = enu;
             orientationReady = true;
 
-            // std::cout << "gps odom yaw: " << yaw << std::endl;
+            std::cout << "gps odom yaw: " << yaw << std::endl;
         }
         
         // std::cout << "gps_odom lla: " << lla[0] << " " << lla[1] << " " << lla[2] << std::endl;
