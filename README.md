@@ -17,6 +17,7 @@ gcc and g++ 7.5.0 are tested OK.
 **Ubuntu >= 18.04**
 
 ROS    >= Melodic. [ROS Installation](http://wiki.ros.org/ROS/Installation)
+libgeographic     sudo apt-get install libgeographic-dev
 
 ### 1.2. **PCL && Eigen**
 PCL    >= 1.8,   Follow [PCL Installation](http://www.pointclouds.org/downloads/linux.html).
@@ -59,11 +60,31 @@ rosbag play XXX.bag
 
 roslaunch fast_lio_sam_loop mapping_velodyne_gps.launch
 
-### 3.3. Save map: 
+### 3.3. Save map & pose
 
-rosservice call /service/save_map
+The map and trajectory can now be exported via dedicated services (aligned with the
+`fast_lio_sam` workflow):
+
+- Save map (PCD files):
+
+```
+rosservice call /service/save_map "destination: 'run1'  resolution: 0.2"
+```
+
+  - `destination` (optional): relative path appended to `savePCDDirectory` (or treated as absolute if
+    starting with `/`).
+  - `resolution` (optional): voxel size for down-sampling (meters). Use `0` to keep the default leaf size.
+
+- Save poses (KITTI-style txt):
+
+```
+rosservice call /service/save_pose "destination: 'run1'"
+```
+
+  This generates `optimized_pose.txt`, `without_optimized_pose.txt`, and `gnss_pose.txt` in the requested
+  folder. Both services honour the `savePCDDirectory` parameter (fallback to `service/save_directory` or
+  `${HOME}/fast_lio_sam_loop` when unset).
 
 ## 4. Acknowledgments
 
 Thanks for LOAM(J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time), [FAST-LIO2](https://github.com/hku-mars/FAST_LIO)，[FAST_LIO_SAM](https://github.com/kahowang/FAST_LIO_SAM), [FAST_LIO_LC](https://github.com/yanliang-wang/FAST_LIO_LC), [LIO-SAM](https://github.com/TixiaoShan/LIO-SAM), [LIO-SAM-6axis](https://github.com/JokerJohn/LIO_SAM_6AXIS).
-

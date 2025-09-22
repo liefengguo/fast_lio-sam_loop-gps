@@ -2,10 +2,12 @@ cmake_minimum_required(VERSION 2.8.3)
 project(fast_lio_sam_loop)
 
 # SET(CMAKE_BUILD_TYPE "Debug")  
+# set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
+
 SET(CMAKE_BUILD_TYPE "Realese")  
 
 ADD_COMPILE_OPTIONS(-std=c++14 )
-set( CMAKE_CXX_FLAGS "-std=c++14" )
+set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
 
 add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
 
@@ -52,7 +54,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   eigen_conversions
 )
-find_package(Boost REQUIRED COMPONENTS serialization thread timer chrono)
+find_package(Boost REQUIRED COMPONENTS serialization thread timer chrono filesystem)
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
@@ -83,6 +85,7 @@ add_service_files(
   DIRECTORY srv
   FILES
   save_map.srv
+  save_pose.srv
 )
 
 generate_messages(
@@ -97,10 +100,10 @@ catkin_package(
 )
 
 add_executable(${PROJECT_NAME}_gpsOdometry src/simpleGpsOdom.cpp)
-target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeographic)
+target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeographic ${Boost_LIBRARIES})
 
 add_library(ikd_Tree include/ikd-Tree/ikd_Tree.cpp)
 add_library(preprocess  src/preprocess.cpp)
 add_executable(fastlio_mapping src/laserMapping.cpp)
-target_link_libraries(fastlio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ikd_Tree preprocess gtsam libGeographic) 
+target_link_libraries(fastlio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ikd_Tree preprocess gtsam libGeographic ${Boost_LIBRARIES}) 
 target_include_directories(fastlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
