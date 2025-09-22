@@ -1,6 +1,117 @@
+#include <boost/filesystem.hpp>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+
 /**
  * 更新里程计轨迹
  */
+namespace bfs = boost::filesystem;
+
+struct PoseRecord
+{
+    Eigen::Vector3d t = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+};
+
+inline std::string resolve_save_directory(const std::string &destination)
+{
+    std::string base = !savePCDDirectory.empty() ? savePCDDirectory : save_directory;
+    if (base.empty())
+    {
+        const char *home = std::getenv("HOME");
+        if (home != nullptr)
+        {
+            base = std::string(home) + "/fast_lio_sam_loop";
+        }
+        else
+        {
+            base = std::string("./fast_lio_sam_loop");
+        }
+    }
+
+    if (destination.empty())
+    {
+        return base;
+    }
+
+    if (destination.front() == '/')
+    {
+        return destination;
+    }
+
+    if (!base.empty() && base.back() == '/')
+    {
+        return base + destination;
+    }
+    return base + "/" + destination;
+}
+
+inline bool ensure_directory_exists(const std::string &directory)
+{
+    try
+    {
+        bfs::path dir_path(directory);
+        if (directory.empty())
+        {
+            return false;
+        }
+        if (bfs::exists(dir_path))
+        {
+            return bfs::is_directory(dir_path);
+        }
+        return bfs::create_directories(dir_path);
+    }
+    catch (const bfs::filesystem_error &e)
+    {
+        ROS_ERROR_STREAM("Failed to prepare directory " << directory << ": " << e.what());
+        return false;
+    }
+}
+
+inline bool create_output_file(std::ofstream &ofs, const std::string &file_path)
+{
+    ofs.open(file_path, std::ios::out);
+    if (!ofs.is_open())
+    {
+        ROS_ERROR_STREAM("Failed to open file " << file_path);
+        return false;
+    }
+    ofs.setf(std::ios::fixed);
+    ofs << std::setprecision(6);
+    return true;
+}
+
+inline void write_pose_record(std::ofstream &ofs, const PoseRecord &pose)
+{
+    ofs << pose.R(0,0) << " " << pose.R(0,1) << " " << pose.R(0,2) << " " << pose.t.x() << " "
+        << pose.R(1,0) << " " << pose.R(1,1) << " " << pose.R(1,2) << " " << pose.t.y() << " "
+        << pose.R(2,0) << " " << pose.R(2,1) << " " << pose.R(2,2) << " " << pose.t.z() << std::endl;
+}
+
+inline PoseRecord make_pose_record(const PointTypePose &pose)
+{
+    PoseRecord record;
+    const double rx = static_cast<double>(pose.roll);
+    const double ry = static_cast<double>(pose.pitch);
+    const double rz = static_cast<double>(pose.yaw);
+    record.t = Eigen::Vector3d(static_cast<double>(pose.x),
+                               static_cast<double>(pose.y),
+                               static_cast<double>(pose.z));
+    record.R = Exp(rx, ry, rz);
+    return record;
+}
+
+inline PoseRecord make_pose_record_from_gps(const PointType &pose)
+{
+    PoseRecord record;
+    record.t = Eigen::Vector3d(static_cast<double>(pose.x),
+                               static_cast<double>(pose.y),
+                               static_cast<double>(pose.z));
+    record.R = Eigen::Matrix3d::Identity();
+    return record;
+}
+
 void update_global_path(const PointTypePose &pose_in)
 {
     string odometry_frame = map_frame;
@@ -403,6 +514,21 @@ void save_keyframes_and_factor()
     // transform.setRotation( qmo );
     // br3.sendTransform( tf::StampedTransform( transform, lidarOdom.header.stamp, map_frame, odometry_frame ) );
 
+    if (cloud_key_poses_6D_unoptimized)
+    {
+        PointTypePose unoptimizedPose;
+        unoptimizedPose.x = state_point.pos(0);
+        unoptimizedPose.y = state_point.pos(1);
+        unoptimizedPose.z = state_point.pos(2);
+        V3D unoptimizedEuler = SO3ToEuler(state_point.rot);
+        unoptimizedPose.roll = unoptimizedEuler(0);
+        unoptimizedPose.pitch = unoptimizedEuler(1);
+        unoptimizedPose.yaw = unoptimizedEuler(2);
+        unoptimizedPose.time = lidar_end_time;
+        unoptimizedPose.intensity = cloud_key_poses_6D_unoptimized->size();
+        cloud_key_poses_6D_unoptimized->push_back(unoptimizedPose);
+    }
+
     thisPose3D.x = latestEstimate.translation().x();
     thisPose3D.y = latestEstimate.translation().y();
     thisPose3D.z = latestEstimate.translation().z();
@@ -799,39 +925,138 @@ void publish_global_map()
 }
 
 // 存储地图
-bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+bool save_map_service(fast_lio_sam_loop::save_map::Request &req, fast_lio_sam_loop::save_map::Response &res)
 {
-    if (cloud_key_poses_6D->size() < 1) {
-			ROS_INFO("NO ENCOUGH POSE!");
-			return false;
-		}
-		pcl::PointCloud<PointType>::Ptr globalRawCloud(new pcl::PointCloud<PointType>());
-		pcl::PointCloud<PointType>::Ptr globalRawCloudDS(new pcl::PointCloud<PointType>());
-		pcl::PointCloud<PointType>::Ptr globalMapCloud(new pcl::PointCloud<PointType>());
+    res.success = false;
 
-        mtx.lock();
-		for (int i = 0; i < (int) cloud_key_poses_3D->size(); i++) {
-			*globalRawCloud += *transformPointCloud(laser_cloud_raw_keyframes[i], &cloud_key_poses_6D->points[i]);
-			cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloud_key_poses_6D->size()<< " ...";
-		}
-        pcl::VoxelGrid<PointType> downSizeFilterSurf2;
-        downSizeFilterSurf2.setLeafSize(global_map_server_leaf_size, global_map_server_leaf_size, global_map_server_leaf_size);
-		downSizeFilterSurf2.setInputCloud(globalRawCloud);	
-		downSizeFilterSurf2.filter(*globalRawCloudDS);
-        mtx.unlock();
+    if (!cloud_key_poses_6D || cloud_key_poses_6D->empty())
+    {
+        ROS_WARN("No key poses available, skip saving map.");
+        return true;
+    }
 
-		*globalMapCloud += *globalRawCloudDS;
-		std::cout << "map size: " << globalMapCloud->size() << std::endl;
+    const std::string target_directory = resolve_save_directory(req.destination);
+    if (!ensure_directory_exists(target_directory))
+    {
+        ROS_ERROR_STREAM("Failed to prepare directory for map saving: " << target_directory);
+        return true;
+    }
 
-		if (globalMapCloud->empty()) {
-			std::cout << "empty global map cloud!" << std::endl;
-			return false;
-		}
-		pcl::io::savePCDFileASCII(save_directory + "globalmap_lidar_feature.pcd", *globalMapCloud);
-		cout << "****************************************************" << endl;
-        cout << "Saving map to pcd files completed!" << endl;
+    ROS_INFO_STREAM("Saving map assets to " << target_directory);
 
-		return true;
+    // 保存关键帧位姿
+    if (cloud_key_poses_3D && !cloud_key_poses_3D->empty())
+    {
+        pcl::io::savePCDFileBinary(target_directory + "/trajectory.pcd", *cloud_key_poses_3D);
+    }
+    if (cloud_key_poses_6D && !cloud_key_poses_6D->empty())
+    {
+        pcl::io::savePCDFileBinary(target_directory + "/transformations.pcd", *cloud_key_poses_6D);
+    }
+    if (cloud_key_poses_6D_unoptimized && !cloud_key_poses_6D_unoptimized->empty())
+    {
+        pcl::io::savePCDFileBinary(target_directory + "/unoptimized_transformations.pcd", *cloud_key_poses_6D_unoptimized);
+    }
+    if (cloudKeyGPSPoses3D && !cloudKeyGPSPoses3D->empty())
+    {
+        pcl::io::savePCDFileBinary(target_directory + "/gnss_pose.pcd", *cloudKeyGPSPoses3D);
+    }
+
+    pcl::PointCloud<PointType>::Ptr globalSurfCloud(new pcl::PointCloud<PointType>());
+    pcl::PointCloud<PointType>::Ptr globalSurfCloudDS(new pcl::PointCloud<PointType>());
+    pcl::PointCloud<PointType>::Ptr globalDenseMap(new pcl::PointCloud<PointType>());
+
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        const size_t keyframe_count = surf_cloud_keyframes.size();
+        for (size_t i = 0; i < keyframe_count; ++i)
+        {
+            *globalSurfCloud += *transformPointCloud(surf_cloud_keyframes[i], &cloud_key_poses_6D->points[i]);
+            if (i % 50 == 0)
+            {
+                ROS_INFO_STREAM_THROTTLE(1.0, "Saving map: processed " << i << "/" << keyframe_count << " keyframes");
+            }
+        }
+    }
+
+    const float leaf_size = req.resolution > 0.0f ? req.resolution : global_map_server_leaf_size;
+    pcl::VoxelGrid<PointType> downSizeFilter;
+    downSizeFilter.setLeafSize(leaf_size, leaf_size, leaf_size);
+    downSizeFilter.setInputCloud(globalSurfCloud);
+    downSizeFilter.filter(*globalSurfCloudDS);
+
+    *globalDenseMap += *globalSurfCloud;
+
+    pcl::io::savePCDFileBinary(target_directory + "/SurfMap.pcd", *globalSurfCloud);
+    pcl::io::savePCDFileBinary(target_directory + "/filterGlobalMap.pcd", *globalSurfCloudDS);
+    pcl::io::savePCDFileBinary(target_directory + "/GlobalMap.pcd", *globalDenseMap);
+
+    res.success = true;
+    ROS_INFO_STREAM("Map saved successfully to " << target_directory);
+    return true;
+}
+
+bool save_pose_service(fast_lio_sam_loop::save_pose::Request &req, fast_lio_sam_loop::save_pose::Response &res)
+{
+    res.success = false;
+
+    const bool has_optimized = (cloud_key_poses_6D && !cloud_key_poses_6D->empty());
+    const bool has_unoptimized = (cloud_key_poses_6D_unoptimized && !cloud_key_poses_6D_unoptimized->empty());
+    const bool has_gnss = (cloudKeyGPSPoses3D && !cloudKeyGPSPoses3D->empty());
+
+    if (!has_optimized && !has_unoptimized && !has_gnss)
+    {
+        ROS_WARN("No trajectory data available, skip saving pose files.");
+        return true;
+    }
+
+    const std::string target_directory = resolve_save_directory(req.destination);
+    if (!ensure_directory_exists(target_directory))
+    {
+        ROS_ERROR_STREAM("Failed to prepare directory for pose saving: " << target_directory);
+        return true;
+    }
+
+    ROS_INFO_STREAM("Saving poses to " << target_directory);
+
+    if (has_optimized)
+    {
+        std::ofstream optimized_ofs;
+        if (create_output_file(optimized_ofs, target_directory + "/optimized_pose.txt"))
+        {
+            for (const auto &pose : cloud_key_poses_6D->points)
+            {
+                write_pose_record(optimized_ofs, make_pose_record(pose));
+            }
+        }
+    }
+
+    if (has_unoptimized)
+    {
+        std::ofstream unoptimized_ofs;
+        if (create_output_file(unoptimized_ofs, target_directory + "/without_optimized_pose.txt"))
+        {
+            for (const auto &pose : cloud_key_poses_6D_unoptimized->points)
+            {
+                write_pose_record(unoptimized_ofs, make_pose_record(pose));
+            }
+        }
+    }
+
+    if (has_gnss)
+    {
+        std::ofstream gnss_ofs;
+        if (create_output_file(gnss_ofs, target_directory + "/gnss_pose.txt"))
+        {
+            for (const auto &pose : cloudKeyGPSPoses3D->points)
+            {
+                write_pose_record(gnss_ofs, make_pose_record_from_gps(pose));
+            }
+        }
+    }
+
+    res.success = true;
+    return true;
 }
 
 void gps_handler(const nav_msgs::Odometry::ConstPtr &gpsMsg)

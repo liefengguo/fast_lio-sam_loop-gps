@@ -59,10 +59,11 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/Vector3.h>
 #include <livox_ros_driver/CustomMsg.h>
-#include <std_srvs/Empty.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
+
+#include <boost/filesystem.hpp>
 
 #include "IMU_Processing.hpp"
 #include "preprocess.h"
@@ -74,6 +75,7 @@
 #include <GeographicLib/Geoid.hpp>
 
 #include "fast_lio_sam_loop/save_map.h"
+#include "fast_lio_sam_loop/save_pose.h"
 
 #include "tic_toc.h"
 
@@ -184,6 +186,7 @@ nav_msgs::Odometry lidarOdom;                                       // lidar里�
 
 // 点云存储服务 
 string save_directory;                      // ? need init
+string savePCDDirectory;                    // default output directory for map/pose saving
 float global_map_server_leaf_size = 0.4;    // ? need init，0.4
 
 // frame for message and tf
@@ -210,6 +213,7 @@ float transformTobeMapped[6];   //  当前帧的位姿(odometry_frame系下)
 // 关键帧位姿
 pcl::PointCloud<PointType>::Ptr cloud_key_poses_3D;
 pcl::PointCloud<PointTypePose>::Ptr cloud_key_poses_6D;
+pcl::PointCloud<PointTypePose>::Ptr cloud_key_poses_6D_unoptimized;
 pcl::PointCloud<PointType>::Ptr copy_cloud_key_poses_3D;
 pcl::PointCloud<PointTypePose>::Ptr copy_cloud_key_poses_6D;
 
@@ -249,6 +253,7 @@ ros::Publisher pubIcpKeyFrames;
 ros::Publisher pubLoopConstraintEdge;
 ros::Publisher pubLaserCloudSurround;
 ros::ServiceServer srvSaveMap;
+ros::ServiceServer srvSavePose;
 
 std::mutex mtx;
 
@@ -284,8 +289,9 @@ void extract_cloud(pcl::PointCloud<PointType>::Ptr cloud_to_extract);
 void visualize_global_map_thread();
 void publish_global_map();
 
-// 存储地图
-bool save_map_service(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res);
+// 存储地图与轨迹
+bool save_map_service(fast_lio_sam_loop::save_map::Request &req, fast_lio_sam_loop::save_map::Response &res);
+bool save_pose_service(fast_lio_sam_loop::save_pose::Request &req, fast_lio_sam_loop::save_pose::Response &res);
 
 // !  ------------------------------------- add-mtc ---------------------------------------------
 
@@ -435,6 +441,11 @@ int main(int argc, char** argv)
     // ******************************* service *******************************
     nh.param<string>("service/save_directory", save_directory, "/home/mtcjyb/Documents/");
     nh.param<float>("service/global_map_server_leaf_size", global_map_server_leaf_size, 0.4);
+    nh.param<string>("savePCDDirectory", savePCDDirectory, std::string(""));
+    if (savePCDDirectory.empty())
+    {
+        savePCDDirectory = save_directory;
+    }
     
     // ***************************** optimization *****************************
     gtsam::ISAM2Params parameters;
@@ -446,6 +457,7 @@ int main(int argc, char** argv)
     cloud_key_poses_3D.reset(new pcl::PointCloud<PointType>());
     cloudKeyGPSPoses3D.reset(new pcl::PointCloud<PointType>());
     cloud_key_poses_6D.reset(new pcl::PointCloud<PointTypePose>());
+    cloud_key_poses_6D_unoptimized.reset(new pcl::PointCloud<PointTypePose>());
     copy_cloud_key_poses_3D.reset(new pcl::PointCloud<PointType>());
     copy_cloud_key_poses_6D.reset(new pcl::PointCloud<PointTypePose>());
 
@@ -546,6 +558,7 @@ int main(int argc, char** argv)
     pub_map_path = nh.advertise<nav_msgs::Path> ("/map_path", 100000);
 
     srvSaveMap = nh.advertiseService("service/save_map", &save_map_service);
+    srvSavePose = nh.advertiseService("service/save_pose", &save_pose_service);
 
     std::thread loopthread(&loop_closure_thread);
     std::thread visualizeMapThread(&visualize_global_map_thread);
