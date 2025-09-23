@@ -422,7 +422,7 @@ void publish_frame_lidar(const ros::Publisher & pubLaserCloudFull_lidar)
     }
         
     laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
-    laserCloudmsg.header.frame_id = "laser_link";
+    laserCloudmsg.header.frame_id = lidar_frame;
     pubLaserCloudFull_lidar.publish(laserCloudmsg);
     publish_count -= PUBFRAME_PERIOD;
 }
@@ -488,7 +488,7 @@ void publish_lidar_odometry(const ros::Publisher & pubLidarOdom)
     Eigen::Vector3d tol = Tol.translation();
 
     lidarOdom.header.frame_id = odometry_frame;
-    lidarOdom.child_frame_id = "laser_link";
+    lidarOdom.child_frame_id = lidar_frame;
     lidarOdom.header.stamp = ros::Time().fromSec(lidar_end_time);
     lidarOdom.pose.pose.position.x =  tol.x();
     lidarOdom.pose.pose.position.y = tol.y();
@@ -522,7 +522,25 @@ void publish_lidar_odometry(const ros::Publisher & pubLidarOdom)
     q.setY(lidarOdom.pose.pose.orientation.y);
     q.setZ(lidarOdom.pose.pose.orientation.z);
     transform.setRotation( q );
-    br2.sendTransform( tf::StampedTransform( transform, lidarOdom.header.stamp, odometry_frame, "laser_link" ) );
+    br2.sendTransform( tf::StampedTransform( transform, lidarOdom.header.stamp, odometry_frame, lidar_frame ) );
+
+    if (third_person_tf_enable)
+    {
+        Eigen::Isometry3d Tthird = Tol * third_person_lidar_tf;
+        Eigen::Quaterniond q_third(Tthird.linear());
+        Eigen::Vector3d t_third = Tthird.translation();
+
+        static tf::TransformBroadcaster third_person_br;
+        tf::Transform third_person_tf;
+        third_person_tf.setOrigin(tf::Vector3(t_third.x(), t_third.y(), t_third.z()));
+        tf::Quaternion third_person_q;
+        third_person_q.setW(q_third.w());
+        third_person_q.setX(q_third.x());
+        third_person_q.setY(q_third.y());
+        third_person_q.setZ(q_third.z());
+        third_person_tf.setRotation(third_person_q);
+        third_person_br.sendTransform(tf::StampedTransform(third_person_tf, lidarOdom.header.stamp, odometry_frame, third_person_frame));
+    }
 }
 
 void publish_odometry(const ros::Publisher & pubOdomAftMapped)

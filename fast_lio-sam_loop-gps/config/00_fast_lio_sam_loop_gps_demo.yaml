@@ -8,6 +8,11 @@ common:
 frame:
     odometry_frame: "odom"
     map_frame:      "map"
+    lidar_frame:    "laser_link"
+    third_person_enable: true
+    third_person_frame: "third_person_view"
+    third_person_offset: [0.0, 0.0, 0.0]
+    third_person_rpy: [0.0, 0.0, 0.0]
 
 preprocess:
     lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 

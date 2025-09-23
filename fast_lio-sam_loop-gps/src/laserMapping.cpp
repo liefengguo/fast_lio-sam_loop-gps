@@ -43,6 +43,9 @@
 #include <so3_math.h>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
+
+#include <vector>
 
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
@@ -192,6 +195,12 @@ float global_map_server_leaf_size = 0.4;    // ? need init，0.4
 // frame for message and tf
 string odometry_frame = "odom";             // ? need init
 string map_frame = "map";                   // ? need init 
+string lidar_frame = "laser_link";
+string third_person_frame = "third_person_view";
+bool third_person_tf_enable = true;
+Eigen::Vector3d third_person_offset_lidar = Eigen::Vector3d::Zero();
+Eigen::Vector3d third_person_rpy_lidar = Eigen::Vector3d::Zero();
+Eigen::Isometry3d third_person_lidar_tf = Eigen::Isometry3d::Identity();
 
 // gtsam
 gtsam::NonlinearFactorGraph gtsam_graph; 
@@ -384,6 +393,65 @@ int main(int argc, char** argv)
     // ***************************** frame coordinate *****************************
     nh.param<string>("frame/odometry_frame", odometry_frame, "odom");
     nh.param<string>("frame/map_frame", map_frame, "map");
+    nh.param<string>("frame/lidar_frame", lidar_frame, "laser_link");
+    nh.param<string>("frame/third_person_frame", third_person_frame, "third_person_view");
+    nh.param<bool>("frame/third_person_enable", third_person_tf_enable, true);
+
+    std::vector<double> third_person_offset_param;
+    if (nh.getParam("frame/third_person_offset", third_person_offset_param))
+    {
+        if (third_person_offset_param.size() == 3)
+        {
+            third_person_offset_lidar = Eigen::Vector3d(third_person_offset_param[0],
+                                                       third_person_offset_param[1],
+                                                       third_person_offset_param[2]);
+        }
+        else
+        {
+            ROS_WARN_STREAM("frame/third_person_offset expects 3 values, got "
+                            << third_person_offset_param.size() << ". Using zeros.");
+            third_person_offset_lidar.setZero();
+        }
+    }
+    else
+    {
+        third_person_offset_lidar.setZero();
+    }
+
+    std::vector<double> third_person_rpy_param;
+    if (nh.getParam("frame/third_person_rpy", third_person_rpy_param))
+    {
+        if (third_person_rpy_param.size() == 3)
+        {
+            third_person_rpy_lidar = Eigen::Vector3d(third_person_rpy_param[0],
+                                                    third_person_rpy_param[1],
+                                                    third_person_rpy_param[2]);
+        }
+        else
+        {
+            ROS_WARN_STREAM("frame/third_person_rpy expects 3 values, got "
+                            << third_person_rpy_param.size() << ". Using zeros.");
+            third_person_rpy_lidar.setZero();
+        }
+    }
+    else
+    {
+        third_person_rpy_lidar.setZero();
+    }
+
+    third_person_lidar_tf.setIdentity();
+    third_person_lidar_tf.translation() = third_person_offset_lidar;
+    Eigen::AngleAxisd rollAngle(third_person_rpy_lidar[0], Eigen::Vector3d::UnitX());
+    Eigen::AngleAxisd pitchAngle(third_person_rpy_lidar[1], Eigen::Vector3d::UnitY());
+    Eigen::AngleAxisd yawAngle(third_person_rpy_lidar[2], Eigen::Vector3d::UnitZ());
+    Eigen::Quaterniond third_person_quat = yawAngle * pitchAngle * rollAngle;
+    third_person_lidar_tf.linear() = third_person_quat.toRotationMatrix();
+
+    if (third_person_tf_enable)
+    {
+        ROS_INFO_STREAM("Third-person tracking frame enabled: parent='" << lidar_frame
+                        << "' child='" << third_person_frame << "'.");
+    }
 
     // ***************************** keyframe detection *****************************
     nh.param<bool>("publish/scan_lidarframe_pub_en", scan_lidar_pub_en, true);
