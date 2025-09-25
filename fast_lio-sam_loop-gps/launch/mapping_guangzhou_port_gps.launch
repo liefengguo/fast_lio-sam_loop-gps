@@ -1,6 +1,8 @@
 <launch>
   <arg name="rviz" default="true" />
   <arg name="use_sim_time" default="true" />
+  <arg name="record_bag" default="true" />
+  <arg name="bag_prefix" default="/home/glf/proj/fast_lio-sam_loop-gps_ws/mapping_guangzhou_port_eval" />
 
   <param name="/use_sim_time" value="$(arg use_sim_time)" />
 
@@ -16,6 +18,11 @@
 
   <node pkg="fast_lio_sam_loop" type="fastlio_mapping" name="laserMapping" output="screen"/>
   <node pkg="fast_lio_sam_loop" type="fast_lio_sam_loop_gpsOdometry" name="fast_lio_sam_loop_gpsOdometry" output="screen"/>
+
+  <group if="$(arg record_bag)">
+    <node pkg="rosbag" type="record" name="mapping_eval_rosbag" output="screen"
+          args="-O $(arg bag_prefix) /gps_odom /gps_path /Odometry /LidarOdometry /odom_path /map_path" />
+  </group>
 
   <group if="$(arg rviz)">
     <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find fast_lio_sam_loop)/rviz_cfg/loam_livox.rviz" />
