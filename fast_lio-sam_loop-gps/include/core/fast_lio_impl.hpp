@@ -567,7 +567,7 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     float x, y, z, roll, pitch, yaw;
     pcl::getTranslationAndEulerAngles(cur_Toi, x, y, z, roll, pitch, yaw);
 
-    std::cout << "imu pose: " << x << " " << y << " " << z << " " << roll << " " << pitch << " " << yaw << std::endl;
+    // std::cout << "imu pose: " << x << " " << y << " " << z << " " << roll << " " << pitch << " " << yaw << std::endl;
 
     static tf::TransformBroadcaster br;
     tf::Transform                   transform;
