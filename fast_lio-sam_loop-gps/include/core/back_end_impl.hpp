@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <limits>
 
+#include <pcl/common/transforms.h>
+#include <pcl/io/pcd_io.h>
+
 #include <gtsam/slam/dataset.h>
 
 /**
@@ -161,6 +164,63 @@ inline void write_pose_graph_if_possible(const gtsam::Values &estimate)
     catch (const std::exception &e)
     {
         ROS_ERROR_STREAM_THROTTLE(5.0, "Failed to write pose_graph.g2o: " << e.what());
+    }
+}
+
+inline void save_keyframe_pointcloud(size_t index,
+                                     const pcl::PointCloud<PointType>::ConstPtr &cloud,
+                                     const PointTypePose &pose)
+{
+    const bfs::path map_dir = ensure_map_directory_path();
+    if (map_dir.empty())
+        return;
+
+    bfs::path buffer_dir = map_dir / "pcd_buffer";
+    boost::system::error_code ec;
+    if (!bfs::exists(buffer_dir) && !bfs::create_directories(buffer_dir, ec) && ec)
+    {
+        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to create pcd_buffer at " << buffer_dir.string() << ": " << ec.message());
+        return;
+    }
+
+    const bfs::path output_path = buffer_dir / (std::to_string(index) + ".pcd");
+
+    int result = 0;
+    if (cloud && !cloud->empty())
+    {
+        result = pcl::io::savePCDFileBinary(output_path.string(), *cloud);
+    }
+    else
+    {
+        pcl::PointCloud<PointType> placeholder;
+        placeholder.push_back(PointType());
+        result = pcl::io::savePCDFileBinary(output_path.string(), placeholder);
+    }
+
+    if (result != 0)
+    {
+        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to save keyframe PCD at " << output_path.string());
+    }
+
+    static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
+    static std::string cached_map_root;
+    const std::string current_map_root = map_dir.string();
+    if (cached_map_root != current_map_root)
+    {
+        accumulated_map.reset(new pcl::PointCloud<PointType>());
+        cached_map_root = current_map_root;
+    }
+    if (cloud && !cloud->empty())
+    {
+        pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
+        Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
+                                                           pose.roll, pose.pitch, pose.yaw);
+        pcl::transformPointCloud(*cloud, *transformed, transform);
+        if (!transformed->empty())
+        {
+            *accumulated_map += *transformed;
+            pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
+        }
     }
 }
 
@@ -641,6 +701,7 @@ void save_keyframes_and_factor()
     update_global_path(thisPose6D);
 
     write_pose_graph_if_possible(isam_current_estimate);
+    save_keyframe_pointcloud(static_cast<size_t>(thisPose3D.intensity), thislaserCloudRawKeyFrame, thisPose6D);
 }
 
 void save_keyframes_and_factor_wt_update_ikf()
@@ -729,6 +790,7 @@ void save_keyframes_and_factor_wt_update_ikf()
     update_global_path(thisPose6D);
 
     write_pose_graph_if_possible(isam_current_estimate);
+    save_keyframe_pointcloud(static_cast<size_t>(thisPose3D.intensity), thislaserCloudRawKeyFrame, thisPose6D);
 }
 
 void add_odom_factor()
