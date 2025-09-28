@@ -1,7 +1,7 @@
 <launch>
   <arg name="rviz" default="true" />
   <arg name="use_sim_time" default="true" />
-  <arg name="record_bag" default="true" />
+  <arg name="record_bag" default="false" />
   <arg name="bag_prefix" default="/home/glf/proj/fast_lio-sam_loop-gps_ws/mapping_guangzhou_port_eval" />
 
   <param name="/use_sim_time" value="$(arg use_sim_time)" />

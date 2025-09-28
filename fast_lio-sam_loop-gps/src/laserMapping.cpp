@@ -39,6 +39,7 @@
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
+#include <algorithm>
 #include <Python.h>
 #include <so3_math.h>
 
@@ -115,6 +116,59 @@ mutex mtx_buffer;
 condition_variable sig_buffer;           // https://blog.csdn.net/weixin_43369786/article/details/129225369
 
 string root_dir = ROOT_DIR;                  // 设置根目录
+
+namespace
+{
+std::string trim_copy(const std::string &input)
+{
+    const auto begin = input.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos)
+        return {};
+    const auto end = input.find_last_not_of(" \t\r\n");
+    return input.substr(begin, end - begin + 1);
+}
+
+std::string ensure_trailing_slash(std::string path)
+{
+    if (!path.empty() && path.back() != '/' && path.back() != '\\')
+        path.push_back('/');
+    return path;
+}
+
+std::string load_save_directory_from_yaml()
+{
+    const std::string yaml_path = std::string(ROOT_DIR) + "config/save_path.yaml";
+    // std::cout << "Loading save_path from " << yaml_path << std::endl;
+    std::ifstream ifs(yaml_path);
+    if (!ifs.is_open())
+    {
+        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to open save_path.yaml at " << yaml_path);
+        return {};
+    }
+
+    std::string line;
+    while (std::getline(ifs, line))
+    {
+        const auto key_pos = line.find("save_path");
+        if (key_pos == std::string::npos)
+            continue;
+
+        const auto colon = line.find(':', key_pos);
+        if (colon == std::string::npos)
+            continue;
+
+        std::string value = trim_copy(line.substr(colon + 1));
+        if (!value.empty() && value.front() == '"' && value.back() == '"' && value.size() >= 2)
+        {
+            value = value.substr(1, value.size() - 2);
+        }
+        return trim_copy(value);
+    }
+
+    ROS_WARN_STREAM_THROTTLE(5.0, "save_path key not found in " << yaml_path);
+    return {};
+}
+} // namespace
 string map_file_path, lid_topic, imu_topic;  // 设置地图文件路径，雷达topic，imu topic
 
 
@@ -510,11 +564,25 @@ int main(int argc, char** argv)
     nh.param<string>("service/save_directory", save_directory, "/home/mtcjyb/Documents/");
     nh.param<float>("service/global_map_server_leaf_size", global_map_server_leaf_size, 0.4);
     nh.param<string>("savePCDDirectory", savePCDDirectory, std::string(""));
+
+    const std::string yaml_save_dir = load_save_directory_from_yaml();
+
+    if (!yaml_save_dir.empty())
+    {
+        save_directory = yaml_save_dir;
+    }
+    save_directory = ensure_trailing_slash(save_directory);
+
     if (savePCDDirectory.empty())
     {
         savePCDDirectory = save_directory;
     }
-    
+    else
+    {
+        savePCDDirectory = ensure_trailing_slash(savePCDDirectory);
+    }
+        ROS_INFO_STREAM("Save directory: " << save_directory 
+                        << (yaml_save_dir.empty() ? " (from param)" : " (from yaml)"));
     // ***************************** optimization *****************************
     gtsam::ISAM2Params parameters;
     parameters.relinearizeThreshold = 0.1;
