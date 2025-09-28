@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iomanip>
 #include <cstdlib>
+#include <limits>
 
 #include <gtsam/slam/dataset.h>
 
@@ -114,12 +115,11 @@ inline PoseRecord make_pose_record_from_gps(const PointType &pose)
     return record;
 }
 
-inline std::string pose_graph_output_path()
+inline bfs::path ensure_map_directory_path()
 {
-    std::string base =  save_directory;
+    std::string base = !savePCDDirectory.empty() ? savePCDDirectory : save_directory;
     if (base.empty())
     {
-        ROS_WARN_STREAM_THROTTLE(5.0, "pose_graph export skipped: save_directory is empty");
         return {};
     }
 
@@ -128,30 +128,31 @@ inline std::string pose_graph_output_path()
     boost::system::error_code ec;
     if (!bfs::exists(map_dir) && !bfs::create_directories(map_dir, ec) && ec)
     {
-        ROS_ERROR_STREAM_THROTTLE(5.0, "Failed to create Map directory at " << map_dir.string() << ": " << ec.message());
         return {};
     }
+    return map_dir;
+}
+
+inline std::string pose_graph_output_path()
+{
+    const bfs::path map_dir = ensure_map_directory_path();
+    if (map_dir.empty())
+        return {};
     return (map_dir / "pose_graph.g2o").string();
 }
 
 inline void write_pose_graph_if_possible(const gtsam::Values &estimate)
 {
-    if (!isam || estimate.empty()){
-        ROS_WARN_STREAM_THROTTLE(5.0, "pose_graph export skipped: isam not initialized or estimate is empty");
+    if (!isam || estimate.empty())
         return;
-    }
 
     const auto &factors = isam->getFactorsUnsafe();
-    if (factors.empty()){
-        ROS_WARN_STREAM_THROTTLE(5.0, "pose_graph export skipped: no factors in isam");
+    if (factors.empty())
         return;
-    }
 
     const std::string output_file = pose_graph_output_path();
-    if (output_file.empty()){
-        ROS_WARN_STREAM_THROTTLE(5.0, "pose_graph export skipped: output file path is empty");
+    if (output_file.empty())
         return;
-    }
 
     try
     {
@@ -1218,7 +1219,24 @@ void update_initial_guess()
                 // WGS84->ENU, must be (0,0,0)
                 Eigen::Vector3d enu;
                 geo_converter.Forward(originLLA[0], originLLA[1], originLLA[2], enu[0], enu[1], enu[2]);
-                //TODO save originLLA to file
+                ROS_INFO("Origin LLA_______: %f, %f, %f", originLLA[0], originLLA[1], originLLA[2]);
+                ROS_INFO("Origin ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
+                const bfs::path map_dir = ensure_map_directory_path();
+                if (!map_dir.empty())
+                {
+                    const bfs::path origin_path = map_dir / "origin.txt";
+                    std::ofstream origin_ofs(origin_path.string(), std::ios::out);
+                    if (origin_ofs.is_open())
+                    {
+                        origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
+                    }
+                    else
+                    {
+                        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                    }
+                }
+
                 if(1)
                 {
                     double roll, pitch, yaw;
