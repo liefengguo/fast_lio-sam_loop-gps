@@ -80,6 +80,7 @@
 
 #include "fast_lio_sam_loop/save_map.h"
 #include "fast_lio_sam_loop/save_pose.h"
+#include <yaml-cpp/yaml.h>
 
 #include "tic_toc.h"
 
@@ -119,55 +120,39 @@ string root_dir = ROOT_DIR;                  // 设置根目录
 
 namespace
 {
-std::string trim_copy(const std::string &input)
-{
+std::string trim_copy(const std::string &input) {
     const auto begin = input.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos)
-        return {};
+    if (begin == std::string::npos) return {};
     const auto end = input.find_last_not_of(" \t\r\n");
     return input.substr(begin, end - begin + 1);
 }
-
-std::string ensure_trailing_slash(std::string path)
-{
+std::string ensure_trailing_slash(std::string path) {
     if (!path.empty() && path.back() != '/' && path.back() != '\\')
         path.push_back('/');
     return path;
 }
 
+
 std::string load_save_directory_from_yaml()
 {
-    const std::string yaml_path = std::string(ROOT_DIR) + "config/save_path.yaml";
-    // std::cout << "Loading save_path from " << yaml_path << std::endl;
-    std::ifstream ifs(yaml_path);
-    if (!ifs.is_open())
+    YAML::Node config = YAML::LoadFile(std::string(ROOT_DIR) + "config/save_path.yaml");
+    std::string save_path = config["save_path"].as<std::string>();
+    char buff[1000];
+    if(chdir(save_path.c_str())==0)
     {
-        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to open save_path.yaml at " << yaml_path);
-        return {};
+        getcwd(buff, 1000);
+        std::cout<<"set path successfully, save_path is "<< buff << std::endl;
     }
-
-    std::string line;
-    while (std::getline(ifs, line))
-    {
-        const auto key_pos = line.find("save_path");
-        if (key_pos == std::string::npos)
-            continue;
-
-        const auto colon = line.find(':', key_pos);
-        if (colon == std::string::npos)
-            continue;
-
-        std::string value = trim_copy(line.substr(colon + 1));
-        if (!value.empty() && value.front() == '"' && value.back() == '"' && value.size() >= 2)
-        {
-            value = value.substr(1, value.size() - 2);
-        }
-        return trim_copy(value);
+    else{
+        getcwd(buff, 1000);
+        std::cout<<"set path false, save_path is "<< buff << std::endl;
     }
-
-    ROS_WARN_STREAM_THROTTLE(5.0, "save_path key not found in " << yaml_path);
-    return {};
+    mkdir("Map", 0777);
+    mkdir("Map/pcd_buffer", 0777);
+    system("exec rm -r Map/pcd_buffer/*");
+    return ensure_trailing_slash(save_path);
 }
+
 } // namespace
 string map_file_path, lid_topic, imu_topic;  // 设置地图文件路径，雷达topic，imu topic
 
@@ -561,7 +546,7 @@ int main(int argc, char** argv)
     nh.param<float>("visualization/global_map_visualization_leaf_size", global_map_visualization_leaf_size, 0.5);
 
     // ******************************* service *******************************
-    nh.param<string>("service/save_directory", save_directory, "/home/mtcjyb/Documents/");
+    nh.param<string>("service/save_directory", save_directory, "/home/glf/Documents/");
     nh.param<float>("service/global_map_server_leaf_size", global_map_server_leaf_size, 0.4);
     nh.param<string>("savePCDDirectory", savePCDDirectory, std::string(""));
 
