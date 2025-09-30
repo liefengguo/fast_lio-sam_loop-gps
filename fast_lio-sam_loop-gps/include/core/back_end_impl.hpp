@@ -2,6 +2,12 @@
 #include <fstream>
 #include <iomanip>
 #include <cstdlib>
+#include <limits>
+
+#include <pcl/common/transforms.h>
+#include <pcl/io/pcd_io.h>
+
+#include <gtsam/slam/dataset.h>
 
 /**
  * 更新里程计轨迹
@@ -110,6 +116,112 @@ inline PoseRecord make_pose_record_from_gps(const PointType &pose)
                                static_cast<double>(pose.z));
     record.R = Eigen::Matrix3d::Identity();
     return record;
+}
+
+inline bfs::path ensure_map_directory_path()
+{
+    std::string base = !savePCDDirectory.empty() ? savePCDDirectory : save_directory;
+    if (base.empty())
+    {
+        return {};
+    }
+
+    bfs::path base_path(base);
+    bfs::path map_dir = base_path / "Map";
+    boost::system::error_code ec;
+    if (!bfs::exists(map_dir) && !bfs::create_directories(map_dir, ec) && ec)
+    {
+        return {};
+    }
+    return map_dir;
+}
+
+inline std::string pose_graph_output_path()
+{
+    const bfs::path map_dir = ensure_map_directory_path();
+    if (map_dir.empty())
+        return {};
+    return (map_dir / "pose_graph.g2o").string();
+}
+
+inline void write_pose_graph_if_possible(const gtsam::Values &estimate)
+{
+    if (!isam || estimate.empty())
+        return;
+
+    const auto &factors = isam->getFactorsUnsafe();
+    if (factors.empty())
+        return;
+
+    const std::string output_file = pose_graph_output_path();
+    if (output_file.empty())
+        return;
+
+    try
+    {
+        gtsam::writeG2o(factors, estimate, output_file);
+    }
+    catch (const std::exception &e)
+    {
+        ROS_ERROR_STREAM_THROTTLE(5.0, "Failed to write pose_graph.g2o: " << e.what());
+    }
+}
+
+inline void save_keyframe_pointcloud(size_t index,
+                                     const pcl::PointCloud<PointType>::ConstPtr &cloud,
+                                     const PointTypePose &pose)
+{
+    const bfs::path map_dir = ensure_map_directory_path();
+    if (map_dir.empty())
+        return;
+
+    bfs::path buffer_dir = map_dir / "pcd_buffer";
+    boost::system::error_code ec;
+    if (!bfs::exists(buffer_dir) && !bfs::create_directories(buffer_dir, ec) && ec)
+    {
+        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to create pcd_buffer at " << buffer_dir.string() << ": " << ec.message());
+        return;
+    }
+
+    const bfs::path output_path = buffer_dir / (std::to_string(index) + ".pcd");
+
+    int result = 0;
+    if (cloud && !cloud->empty())
+    {
+        result = pcl::io::savePCDFileBinary(output_path.string(), *cloud);
+    }
+    else
+    {
+        pcl::PointCloud<PointType> placeholder;
+        placeholder.push_back(PointType());
+        result = pcl::io::savePCDFileBinary(output_path.string(), placeholder);
+    }
+
+    if (result != 0)
+    {
+        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to save keyframe PCD at " << output_path.string());
+    }
+
+    static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
+    static std::string cached_map_root;
+    const std::string current_map_root = map_dir.string();
+    if (cached_map_root != current_map_root)
+    {
+        accumulated_map.reset(new pcl::PointCloud<PointType>());
+        cached_map_root = current_map_root;
+    }
+    if (cloud && !cloud->empty())
+    {
+        pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
+        Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
+                                                           pose.roll, pose.pitch, pose.yaw);
+        pcl::transformPointCloud(*cloud, *transformed, transform);
+        if (!transformed->empty())
+        {
+            *accumulated_map += *transformed;
+            pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
+        }
+    }
 }
 
 void update_global_path(const PointTypePose &pose_in)
@@ -587,6 +699,9 @@ void save_keyframes_and_factor()
 
     // save path for visualization
     update_global_path(thisPose6D);
+
+    write_pose_graph_if_possible(isam_current_estimate);
+    save_keyframe_pointcloud(static_cast<size_t>(thisPose3D.intensity), thislaserCloudRawKeyFrame, thisPose6D);
 }
 
 void save_keyframes_and_factor_wt_update_ikf()
@@ -673,6 +788,9 @@ void save_keyframes_and_factor_wt_update_ikf()
 
     // save path for visualization
     update_global_path(thisPose6D);
+
+    write_pose_graph_if_possible(isam_current_estimate);
+    save_keyframe_pointcloud(static_cast<size_t>(thisPose3D.intensity), thislaserCloudRawKeyFrame, thisPose6D);
 }
 
 void add_odom_factor()
@@ -763,6 +881,7 @@ void correct_poses()  // 回环成功的话，更新轨迹。并且if correct_fe
         recontruct_ikd_tree();
     
         ROS_INFO("\033[1;32m----> ISAM2 Big Update after loop.\033[0m");
+        write_pose_graph_if_possible(isam_current_estimate);
         aloop_Is_closed = false;
     }
 }
@@ -796,6 +915,7 @@ void correct_poses_wt_rebuild_ikd()
         }
 
         ROS_INFO("ISAM2 Update");
+        write_pose_graph_if_possible(isam_current_estimate);
         aloop_Is_closed = false;
     }
 }
@@ -1128,7 +1248,7 @@ void update_initial_guess()
                                              alignedGPS.pose.pose.orientation.y,
                                              alignedGPS.pose.pose.orientation.z,
                                              alignedGPS.pose.pose.orientation.w)).getRPY(roll, pitch, yaw);
-                if (!std::isnan(yaw)) 
+                if (!std::isnan(yaw))
                 {
                     if(!manual_gps_init)
                     {
@@ -1161,6 +1281,23 @@ void update_initial_guess()
                 // WGS84->ENU, must be (0,0,0)
                 Eigen::Vector3d enu;
                 geo_converter.Forward(originLLA[0], originLLA[1], originLLA[2], enu[0], enu[1], enu[2]);
+                ROS_INFO("Origin LLA_______: %f, %f, %f", originLLA[0], originLLA[1], originLLA[2]);
+                ROS_INFO("Origin ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
+                const bfs::path map_dir = ensure_map_directory_path();
+                if (!map_dir.empty())
+                {
+                    const bfs::path origin_path = map_dir / "origin.txt";
+                    std::ofstream origin_ofs(origin_path.string(), std::ios::out);
+                    if (origin_ofs.is_open())
+                    {
+                        origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
+                    }
+                    else
+                    {
+                        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                    }
+                }
 
                 if(1)
                 {
@@ -1193,6 +1330,7 @@ void update_initial_guess()
                 noise_x *= 1e-4;
                 noise_y *= 1e-4;
                 noise_z *= 1e-4;
+                // todo maybe a bug here, *= 1e-4 always?
                 // }
                 gtsam::Vector Vector3(3);
                 Vector3 << noise_x, noise_y, noise_z;
@@ -1300,7 +1438,7 @@ void add_gps_factor()
         // pose graph will crashed if giving some respectively bad gps points at
         // first.
         if (keyframeGPSfactor.size() < gpc_factor_init_num) {
-            ROS_INFO("Accumulated gps factor: %d", keyframeGPSfactor.size());
+            ROS_INFO("Accumulated gps factor: %ld", keyframeGPSfactor.size());
             return;
         }
 

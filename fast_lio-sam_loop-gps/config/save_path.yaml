@@ -1,0 +1,3 @@
+# Default map output base directory for fast_lio_sam_loop.
+# internal_auto_mapping UI can update this file at runtime.
+save_path: "/home/glf/Map/test_new/"

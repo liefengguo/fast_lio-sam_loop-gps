@@ -105,5 +105,5 @@ target_link_libraries(${PROJECT_NAME}_gpsOdometry ${catkin_LIBRARIES} libGeograp
 add_library(ikd_Tree include/ikd-Tree/ikd_Tree.cpp)
 add_library(preprocess  src/preprocess.cpp)
 add_executable(fastlio_mapping src/laserMapping.cpp)
-target_link_libraries(fastlio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ikd_Tree preprocess gtsam libGeographic ${Boost_LIBRARIES}) 
+target_link_libraries(fastlio_mapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${PYTHON_LIBRARIES} ikd_Tree preprocess gtsam libGeographic ${Boost_LIBRARIES} yaml-cpp) 
 target_include_directories(fastlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})

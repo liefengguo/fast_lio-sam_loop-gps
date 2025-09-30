@@ -85,8 +85,8 @@ gps:
     gps_cov_threshold: 8                           # m^2, threshold for using GPS data
     pose_cov_threshold: 25.0                       # m^2, threshold for using GPS data ???????????????????????????????????????
     gps_distance: 0.5                              # the distance bet
-    manual_gps_init: false                          # if you sure, you can use it. if not, system will init by simpleGpsOdom.
-    manual_init_yaw: -1.57                         # unit rad, if you sure, manual_gps_init can be set "true"
+    manual_gps_init: true                          # if you sure, you can use it. if not, system will init by simpleGpsOdom.
+    manual_init_yaw: -0.80                         # unit rad, if you sure, manual_gps_init can be set "true"-1.57
 
 #------------------------------------------------------ global map visualization ---------------------------------------------
 
