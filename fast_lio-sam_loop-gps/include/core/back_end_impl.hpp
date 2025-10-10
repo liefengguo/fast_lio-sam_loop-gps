@@ -1,6 +1,8 @@
 #include <boost/filesystem.hpp>
 #include <fstream>
 #include <iomanip>
+#include <algorithm>
+#include <vector>
 #include <cstdlib>
 #include <limits>
 
@@ -143,7 +145,81 @@ inline std::string pose_graph_output_path()
         return {};
     return (map_dir / "pose_graph.g2o").string();
 }
+inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::string &output_file){
+    if (use_gps && !gps_index_container.empty())
+        {
+            struct GPSEdgeRecord
+            {
+                size_t pose_key;
+                gtsam::Point3 measurement;
+                Eigen::Vector3d information_diag;
+            };
 
+            std::vector<GPSEdgeRecord> gps_edges;
+            gps_edges.reserve(gps_index_container.size());
+
+            for (const auto &entry : gps_index_container)
+            {
+                const auto pose_id = static_cast<size_t>(entry.first);
+                const auto factor_index = static_cast<size_t>(entry.second);
+                if (factor_index >= keyframeGPSfactor.size())
+                    continue;
+
+                const gtsam::GPSFactor &gps_factor = keyframeGPSfactor[factor_index];
+                const gtsam::Point3 &measurement = gps_factor.measurementIn();
+
+                Eigen::Vector3d information_diag(1.0, 1.0, 1.0);
+                if (const auto diagonal = boost::dynamic_pointer_cast<gtsam::noiseModel::Diagonal>(gps_factor.noiseModel()))
+                {
+                    const auto info_matrix = diagonal->information();
+                    information_diag.x() = info_matrix(0, 0);
+                    information_diag.y() = info_matrix(1, 1);
+                    information_diag.z() = info_matrix(2, 2);
+                }
+
+                gps_edges.push_back({pose_id, measurement, information_diag});
+            }
+
+            if (!gps_edges.empty())
+            {
+                auto keys = estimate.keys();
+                size_t max_key = 0;
+                if (!keys.empty())
+                {
+                    max_key = *std::max_element(keys.begin(), keys.end());
+                }
+
+                for (const auto &edge : gps_edges)
+                {
+                    max_key = std::max(max_key, edge.pose_key);
+                }
+
+                const size_t scale_vertex_id = max_key + 1;
+
+                std::ofstream ofs(output_file, std::ios::app);
+                if (!ofs.is_open())
+                {
+                    ROS_WARN_STREAM_THROTTLE(5.0, "Failed to append GPS factors to " << output_file);
+                    return;
+                }
+
+                ofs.setf(std::ios::fixed);
+                ofs << std::setprecision(6);
+
+                ofs << "VERTEX_SCALE:DOUBLE " << scale_vertex_id << " 1" << std::endl;
+
+                for (const auto &edge : gps_edges)
+                {
+                    ofs << "EDGE_DIS:VEC3 " << edge.pose_key << " " << scale_vertex_id
+                        << " " << edge.measurement.x() << " " << edge.measurement.y()
+                        << " " << edge.measurement.z() << " "
+                        << edge.information_diag.x() << " 0 0 0 "
+                        << edge.information_diag.y() << " 0 0 0 "
+                        << edge.information_diag.z() << std::endl;
+                }
+            }
+        }
+}
 inline void write_pose_graph_if_possible(const gtsam::Values &estimate)
 {
     if (!isam || estimate.empty())
@@ -160,6 +236,8 @@ inline void write_pose_graph_if_possible(const gtsam::Values &estimate)
     try
     {
         gtsam::writeG2o(factors, estimate, output_file);
+        write_pose_graph_addGPS(estimate, output_file);
+        
     }
     catch (const std::exception &e)
     {
@@ -1329,7 +1407,7 @@ void update_initial_guess()
                 //if (!updateOrigin) {
                 noise_x *= 1e-4;
                 noise_y *= 1e-4;
-                noise_z *= 1e-4;
+                noise_z *= 1e-3;
                 // todo maybe a bug here, *= 1e-4 always?
                 // }
                 gtsam::Vector Vector3(3);
