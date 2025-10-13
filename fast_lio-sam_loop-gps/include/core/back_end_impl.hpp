@@ -3,11 +3,17 @@
 #include <iomanip>
 #include <algorithm>
 #include <vector>
+#include <mutex>
 #include <cstdlib>
 #include <limits>
 
+#include <ros/ros.h>
 #include <pcl/common/transforms.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
+
+#include "common_lib.h"
 
 #include <gtsam/slam/dataset.h>
 
@@ -15,6 +21,12 @@
  * 更新里程计轨迹
  */
 namespace bfs = boost::filesystem;
+
+static std::mutex map_cache_mutex;
+static pcl::PointCloud<PointType>::Ptr latest_global_map_raw(new pcl::PointCloud<PointType>());
+static pcl::PointCloud<PointType>::Ptr latest_global_map_filtered(new pcl::PointCloud<PointType>());
+static pcl::PointCloud<PointType>::Ptr latest_ground_map(new pcl::PointCloud<PointType>());
+extern bool pcd_save_en;
 
 struct PoseRecord
 {
@@ -281,26 +293,26 @@ inline void save_keyframe_pointcloud(size_t index,
         ROS_WARN_STREAM_THROTTLE(5.0, "Failed to save keyframe PCD at " << output_path.string());
     }
 
-    static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
-    static std::string cached_map_root;
-    const std::string current_map_root = map_dir.string();
-    if (cached_map_root != current_map_root)
-    {
-        accumulated_map.reset(new pcl::PointCloud<PointType>());
-        cached_map_root = current_map_root;
-    }
-    if (cloud && !cloud->empty())
-    {
-        pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
-        Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
-                                                           pose.roll, pose.pitch, pose.yaw);
-        pcl::transformPointCloud(*cloud, *transformed, transform);
-        if (!transformed->empty())
-        {
-            *accumulated_map += *transformed;
-            pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
-        }
-    }
+    // static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
+    // static std::string cached_map_root;
+    // const std::string current_map_root = map_dir.string();
+    // if (cached_map_root != current_map_root)
+    // {
+    //     accumulated_map.reset(new pcl::PointCloud<PointType>());
+    //     cached_map_root = current_map_root;
+    // }
+    // if (cloud && !cloud->empty())
+    // {
+    //     pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
+    //     Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
+    //                                                        pose.roll, pose.pitch, pose.yaw);
+    //     pcl::transformPointCloud(*cloud, *transformed, transform);
+    //     if (!transformed->empty())
+    //     {
+    //         *accumulated_map += *transformed;
+    //         pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
+    //     }
+    // }
 }
 
 void update_global_path(const PointTypePose &pose_in)
@@ -1074,7 +1086,8 @@ void publish_global_map()
 {   
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time);
 
-    if (pubLaserCloudSurround.getNumSubscribers() == 0)
+    const bool compute_full_map = pcd_save_en;
+    if (pubLaserCloudSurround.getNumSubscribers() == 0 && !compute_full_map)
       return;
 
     if (cloud_key_poses_3D->points.empty() == true)
@@ -1121,6 +1134,33 @@ void publish_global_map()
     downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
     downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
     publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, map_frame);
+
+
+    if (compute_full_map && !globalMapKeyFrames->empty())
+    {
+        pcl::PointCloud<PointType>::Ptr groundMap(new pcl::PointCloud<PointType>());
+        pcl::PassThrough<PointType> ground_filter;
+        ground_filter.setFilterFieldName("z");
+        ground_filter.setFilterLimits(-std::numeric_limits<float>::infinity(), 0.0f);
+        ground_filter.setInputCloud(globalMapKeyFrames);
+        ground_filter.filter(*groundMap);
+        if (!groundMap->empty())
+        {
+            pcl::VoxelGrid<PointType> ground_downsample;
+            const float map_leaf = std::max(global_map_server_leaf_size, 0.1f);
+            const float ground_leaf = std::min(map_leaf, 0.3f);
+            ground_downsample.setLeafSize(ground_leaf, ground_leaf, ground_leaf);
+            ground_downsample.setInputCloud(groundMap);
+            pcl::PointCloud<PointType> ground_tmp;
+            ground_downsample.filter(ground_tmp);
+            *groundMap = ground_tmp;
+        }
+        std::lock_guard<std::mutex> cache_lock(map_cache_mutex);
+        *latest_global_map_raw = *globalMapKeyFrames;
+        *latest_global_map_filtered = *globalMapKeyFramesDS;
+        *latest_ground_map = *groundMap;
+
+    }
 }
 
 // 存储地图
