@@ -525,7 +525,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.5
       Style: Flat Squares
-      Topic: /visualization/map_global
+      Topic: /mapping
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true

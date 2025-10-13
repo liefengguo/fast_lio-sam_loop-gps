@@ -135,7 +135,8 @@ std::string ensure_trailing_slash(std::string path) {
 
 std::string load_save_directory_from_yaml()
 {
-    YAML::Node config = YAML::LoadFile(std::string(ROOT_DIR) + "config/save_path.yaml");
+    // YAML::Node config = YAML::LoadFile(std::string(ROOT_DIR) + "config/save_path.yaml");
+    YAML::Node config = YAML::LoadFile("/home/glf/Map/gps_baesd_mapping_config/save_path.yaml");
     std::string save_path = config["save_path"].as<std::string>();
     char buff[1000];
     if(chdir(save_path.c_str())==0)
@@ -300,6 +301,8 @@ ros::Publisher pubHistoryKeyFrames;
 ros::Publisher pubIcpKeyFrames;
 ros::Publisher pubLoopConstraintEdge;
 ros::Publisher pubLaserCloudSurround;
+ros::Publisher pubPathMappedCloud;
+ros::Publisher pubGpsMappedCloud;
 ros::ServiceServer srvSaveMap;
 ros::ServiceServer srvSavePose;
 
@@ -659,12 +662,14 @@ int main(int argc, char** argv)
             ("/cloud_registered_body", 100000);
     ros::Publisher pubLaserCloudEffect = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_effected", 100000);
-    ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>
-            ("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
-            ("/Odometry", 100000);
+            ("/odom_mapped", 100000);
     ros::Publisher pubOdomPath      = nh.advertise<nav_msgs::Path> 
             ("/odom_path", 100000);
+    pubPathMappedCloud = nh.advertise<sensor_msgs::PointCloud2>
+            ("/path_mapped", 10);
+    pubGpsMappedCloud = nh.advertise<sensor_msgs::PointCloud2>
+            ("/gps_mapped", 10);
 
     pubLaserCloudFull_lidar = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_registered_lidar", 100000);
@@ -674,7 +679,7 @@ int main(int argc, char** argv)
     pubHistoryKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_history_cloud", 1);
     pubIcpKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_corrected_cloud", 1);
     pubLoopConstraintEdge = nh.advertise<visualization_msgs::MarkerArray>("/loop/loop_closure_constraints", 1);
-    pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("visualization/map_global", 1);
+    pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("mapping", 1);
     pubGPSOdometry = nh.advertise<sensor_msgs::NavSatFix>("gps/odometry_gps", 1);
     pub_map_path = nh.advertise<nav_msgs::Path> ("/map_path", 100000);
 

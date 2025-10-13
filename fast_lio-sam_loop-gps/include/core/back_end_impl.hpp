@@ -207,6 +207,7 @@ inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::s
                 ofs << std::setprecision(6);
 
                 ofs << "VERTEX_SCALE:DOUBLE " << scale_vertex_id << " 1" << std::endl;
+                ofs << "FIX " << scale_vertex_id << std::endl;
 
                 for (const auto &edge : gps_edges)
                 {
@@ -1571,4 +1572,35 @@ void publish_global_path()
         global_path.header.frame_id = map_frame;
         pub_map_path.publish(global_path);
     }
-} 
+    if (pubPathMappedCloud.getNumSubscribers() != 0 && !global_path.poses.empty())
+    {
+            pcl::PointCloud<PointType> pathCloud;
+            pathCloud.points.reserve(global_path.poses.size());
+            for (size_t idx = 0; idx < global_path.poses.size(); ++idx)
+            {
+                PointType pt;
+                const auto &pose = global_path.poses[idx].pose.position;
+                pt.x = pose.x;
+                pt.y = pose.y;
+                pt.z = pose.z;
+                pt.intensity = static_cast<float>(idx);
+                pathCloud.push_back(pt);
+            }
+            pathCloud.width = pathCloud.size();
+            pathCloud.height = 1;
+            pathCloud.is_dense = false;
+            sensor_msgs::PointCloud2 pathMsg;
+            pcl::toROSMsg(pathCloud, pathMsg);
+            pathMsg.header.stamp = global_path.header.stamp;
+            pathMsg.header.frame_id = global_path.header.frame_id;
+            pubPathMappedCloud.publish(pathMsg);
+    }
+
+    if (pubGpsMappedCloud.getNumSubscribers() != 0 && cloudKeyGPSPoses3D && !cloudKeyGPSPoses3D->empty()) {
+        sensor_msgs::PointCloud2 gpsCloudMsg;
+        pcl::toROSMsg(*cloudKeyGPSPoses3D, gpsCloudMsg);
+        gpsCloudMsg.header.stamp = ros::Time().fromSec(lidar_end_time);
+        gpsCloudMsg.header.frame_id = map_frame;
+        pubGpsMappedCloud.publish(gpsCloudMsg);
+    }
+}
