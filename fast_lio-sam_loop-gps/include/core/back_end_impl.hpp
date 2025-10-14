@@ -21,11 +21,6 @@
  * 更新里程计轨迹
  */
 namespace bfs = boost::filesystem;
-
-static std::mutex map_cache_mutex;
-static pcl::PointCloud<PointType>::Ptr latest_global_map_raw(new pcl::PointCloud<PointType>());
-static pcl::PointCloud<PointType>::Ptr latest_global_map_filtered(new pcl::PointCloud<PointType>());
-static pcl::PointCloud<PointType>::Ptr latest_ground_map(new pcl::PointCloud<PointType>());
 extern bool pcd_save_en;
 
 struct PoseRecord
@@ -1098,6 +1093,7 @@ void publish_global_map()
     pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapKeyFramesDS(new pcl::PointCloud<PointType>());
+    pcl::PointCloud<PointType>::Ptr globalMapKeyFramesRaw(new pcl::PointCloud<PointType>());
 
     // kd-tree to find near key frames to visualize
     std::vector<int> pointSearchIndGlobalMap;
@@ -1127,6 +1123,7 @@ void publish_global_map()
         continue;
         int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
         *globalMapKeyFrames += *transformPointCloud(surf_cloud_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
+        *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
     }
     // downsample visualized points
     pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization
@@ -1155,11 +1152,42 @@ void publish_global_map()
             ground_downsample.filter(ground_tmp);
             *groundMap = ground_tmp;
         }
-        std::lock_guard<std::mutex> cache_lock(map_cache_mutex);
-        *latest_global_map_raw = *globalMapKeyFrames;
-        *latest_global_map_filtered = *globalMapKeyFramesDS;
-        *latest_ground_map = *groundMap;
 
+
+
+        const bfs::path map_dir = ensure_map_directory_path();
+        if (map_dir.empty())
+        {
+            ROS_WARN("Unable to save maps: map directory is not available.");
+        }
+        else
+        {
+            if (globalMapKeyFrames->empty())
+            {
+                ROS_WARN("Raw map is empty, skip saving Map/*.pcd");
+            }
+            else
+            {
+                const bfs::path raw_path = map_dir / "raw_map.pcd";
+                pcl::io::savePCDFileBinary(raw_path.string(), *globalMapKeyFramesRaw);
+                ROS_INFO_STREAM("Raw map saved to " << raw_path.string());
+
+                const bfs::path map_path = map_dir / "map.pcd";
+                pcl::io::savePCDFileBinary(map_path.string(), *globalMapKeyFrames);
+                ROS_INFO_STREAM("Downsampled map saved to " << map_path.string());
+
+                if (groundMap && !groundMap->empty())
+                {
+                    const bfs::path ground_path = map_dir / "ground_map.pcd";
+                    pcl::io::savePCDFileBinary(ground_path.string(), *groundMap);
+                    ROS_INFO_STREAM("Ground map saved to " << ground_path.string());
+                }
+                else
+                {
+                    ROS_WARN("Ground map is empty, skip saving Map/ground_map.pcd");
+                }
+            }
+        }
     }
 }
 
