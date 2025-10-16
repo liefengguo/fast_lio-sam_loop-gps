@@ -52,6 +52,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/registration/icp.h>
 
@@ -135,7 +136,8 @@ std::string ensure_trailing_slash(std::string path) {
 
 std::string load_save_directory_from_yaml()
 {
-    YAML::Node config = YAML::LoadFile(std::string(ROOT_DIR) + "config/save_path.yaml");
+    // YAML::Node config = YAML::LoadFile(std::string(ROOT_DIR) + "config/save_path.yaml");
+    YAML::Node config = YAML::LoadFile("/home/glf/Map/gps_baesd_mapping_config/save_path.yaml");
     std::string save_path = config["save_path"].as<std::string>();
     char buff[1000];
     if(chdir(save_path.c_str())==0)
@@ -300,6 +302,8 @@ ros::Publisher pubHistoryKeyFrames;
 ros::Publisher pubIcpKeyFrames;
 ros::Publisher pubLoopConstraintEdge;
 ros::Publisher pubLaserCloudSurround;
+ros::Publisher pubPathMappedCloud;
+ros::Publisher pubGpsMappedCloud;
 ros::ServiceServer srvSaveMap;
 ros::ServiceServer srvSavePose;
 
@@ -659,12 +663,14 @@ int main(int argc, char** argv)
             ("/cloud_registered_body", 100000);
     ros::Publisher pubLaserCloudEffect = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_effected", 100000);
-    ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>
-            ("/Laser_map", 100000);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
-            ("/Odometry", 100000);
+            ("/odom_mapped", 100000);
     ros::Publisher pubOdomPath      = nh.advertise<nav_msgs::Path> 
             ("/odom_path", 100000);
+    pubPathMappedCloud = nh.advertise<sensor_msgs::PointCloud2>
+            ("/path_mapped", 10);
+    pubGpsMappedCloud = nh.advertise<sensor_msgs::PointCloud2>
+            ("/gps_mapped", 10);
 
     pubLaserCloudFull_lidar = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_registered_lidar", 100000);
@@ -674,7 +680,7 @@ int main(int argc, char** argv)
     pubHistoryKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_history_cloud", 1);
     pubIcpKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_corrected_cloud", 1);
     pubLoopConstraintEdge = nh.advertise<visualization_msgs::MarkerArray>("/loop/loop_closure_constraints", 1);
-    pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("visualization/map_global", 1);
+    pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("mapping", 1);
     pubGPSOdometry = nh.advertise<sensor_msgs::NavSatFix>("gps/odometry_gps", 1);
     pub_map_path = nh.advertise<nav_msgs::Path> ("/map_path", 100000);
 
@@ -876,14 +882,60 @@ int main(int argc, char** argv)
     /**************** save map ****************/
     /* 1. make sure you have enough memories
     /* 2. pcd save will largely influence the real-time performences **/
-    if (pcl_wait_save->size() > 0 && pcd_save_en)
-    {
-        string file_name = string("scans.pcd");
-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
-        pcl::PCDWriter pcd_writer;
-        cout << "current scan saved to /PCD/" << file_name<<endl;
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-    }
+    // if (pcl_wait_save->size() > 0 && pcd_save_en)
+    // {
+    //     string file_name = string("scans.pcd");
+    //     string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+    //     pcl::PCDWriter pcd_writer;
+    //     cout << "current scan saved to /PCD/" << file_name<<endl;
+    //     pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+    // }
+    // if(pcd_save_en){
+    //     publish_global_map();
+    //     pcl::PointCloud<PointType>::Ptr raw_map_points(new pcl::PointCloud<PointType>());
+    //     pcl::PointCloud<PointType>::Ptr filtered_map_points(new pcl::PointCloud<PointType>());
+    //     pcl::PointCloud<PointType>::Ptr ground_map_points(new pcl::PointCloud<PointType>());
+    //     {
+    //         std::lock_guard<std::mutex> lock(map_cache_mutex);
+    //         *raw_map_points = *latest_global_map_raw;
+    //         *filtered_map_points = *latest_global_map_filtered;
+    //         *ground_map_points = *latest_ground_map;
+    //     }
+
+    //     const bfs::path map_dir = ensure_map_directory_path();
+    //     if (map_dir.empty())
+    //     {
+    //         ROS_WARN("Unable to save maps: map directory is not available.");
+    //     }
+    //     else
+    //     {
+    //         if (raw_map_points->empty())
+    //         {
+    //             ROS_WARN("Raw map is empty, skip saving Map/*.pcd");
+    //         }
+    //         else
+    //         {
+    //             const bfs::path raw_path = map_dir / "raw_map.pcd";
+    //             pcl::io::savePCDFileBinary(raw_path.string(), *raw_map_points);
+    //             ROS_INFO_STREAM("Raw map saved to " << raw_path.string());
+
+    //             const bfs::path map_path = map_dir / "map.pcd";
+    //             pcl::io::savePCDFileBinary(map_path.string(), *filtered_map_points);
+    //             ROS_INFO_STREAM("Downsampled map saved to " << map_path.string());
+
+    //             if (ground_map_points && !ground_map_points->empty())
+    //             {
+    //                 const bfs::path ground_path = map_dir / "ground_map.pcd";
+    //                 pcl::io::savePCDFileBinary(ground_path.string(), *ground_map_points);
+    //                 ROS_INFO_STREAM("Ground map saved to " << ground_path.string());
+    //             }
+    //             else
+    //             {
+    //                 ROS_WARN("Ground map is empty, skip saving Map/ground_map.pcd");
+    //             }
+    //         }
+    //     }
+    // }// if pcd_save_en
 
     fout_out.close();
     fout_pre.close();

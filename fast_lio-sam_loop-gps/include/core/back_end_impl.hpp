@@ -3,11 +3,17 @@
 #include <iomanip>
 #include <algorithm>
 #include <vector>
+#include <mutex>
 #include <cstdlib>
 #include <limits>
 
+#include <ros/ros.h>
 #include <pcl/common/transforms.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
+
+#include "common_lib.h"
 
 #include <gtsam/slam/dataset.h>
 
@@ -15,6 +21,7 @@
  * 更新里程计轨迹
  */
 namespace bfs = boost::filesystem;
+extern bool pcd_save_en;
 
 struct PoseRecord
 {
@@ -207,6 +214,7 @@ inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::s
                 ofs << std::setprecision(6);
 
                 ofs << "VERTEX_SCALE:DOUBLE " << scale_vertex_id << " 1" << std::endl;
+                ofs << "FIX " << scale_vertex_id << std::endl;
 
                 for (const auto &edge : gps_edges)
                 {
@@ -280,26 +288,26 @@ inline void save_keyframe_pointcloud(size_t index,
         ROS_WARN_STREAM_THROTTLE(5.0, "Failed to save keyframe PCD at " << output_path.string());
     }
 
-    static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
-    static std::string cached_map_root;
-    const std::string current_map_root = map_dir.string();
-    if (cached_map_root != current_map_root)
-    {
-        accumulated_map.reset(new pcl::PointCloud<PointType>());
-        cached_map_root = current_map_root;
-    }
-    if (cloud && !cloud->empty())
-    {
-        pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
-        Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
-                                                           pose.roll, pose.pitch, pose.yaw);
-        pcl::transformPointCloud(*cloud, *transformed, transform);
-        if (!transformed->empty())
-        {
-            *accumulated_map += *transformed;
-            pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
-        }
-    }
+    // static pcl::PointCloud<PointType>::Ptr accumulated_map(new pcl::PointCloud<PointType>());
+    // static std::string cached_map_root;
+    // const std::string current_map_root = map_dir.string();
+    // if (cached_map_root != current_map_root)
+    // {
+    //     accumulated_map.reset(new pcl::PointCloud<PointType>());
+    //     cached_map_root = current_map_root;
+    // }
+    // if (cloud && !cloud->empty())
+    // {
+    //     pcl::PointCloud<PointType>::Ptr transformed(new pcl::PointCloud<PointType>());
+    //     Eigen::Affine3f transform = pcl::getTransformation(pose.x, pose.y, pose.z,
+    //                                                        pose.roll, pose.pitch, pose.yaw);
+    //     pcl::transformPointCloud(*cloud, *transformed, transform);
+    //     if (!transformed->empty())
+    //     {
+    //         *accumulated_map += *transformed;
+    //         pcl::io::savePCDFileBinary((map_dir / "map.pcd").string(), *accumulated_map);
+    //     }
+    // }
 }
 
 void update_global_path(const PointTypePose &pose_in)
@@ -1073,7 +1081,8 @@ void publish_global_map()
 {   
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time);
 
-    if (pubLaserCloudSurround.getNumSubscribers() == 0)
+    const bool compute_full_map = pcd_save_en;
+    if (pubLaserCloudSurround.getNumSubscribers() == 0 && !compute_full_map)
       return;
 
     if (cloud_key_poses_3D->points.empty() == true)
@@ -1084,6 +1093,7 @@ void publish_global_map()
     pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapKeyFramesDS(new pcl::PointCloud<PointType>());
+    pcl::PointCloud<PointType>::Ptr globalMapKeyFramesRaw(new pcl::PointCloud<PointType>());
 
     // kd-tree to find near key frames to visualize
     std::vector<int> pointSearchIndGlobalMap;
@@ -1113,6 +1123,7 @@ void publish_global_map()
         continue;
         int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
         *globalMapKeyFrames += *transformPointCloud(surf_cloud_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
+        *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
     }
     // downsample visualized points
     pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization
@@ -1120,6 +1131,64 @@ void publish_global_map()
     downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
     downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
     publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, map_frame);
+
+
+    if (compute_full_map && !globalMapKeyFrames->empty())
+    {
+        pcl::PointCloud<PointType>::Ptr groundMap(new pcl::PointCloud<PointType>());
+        pcl::PassThrough<PointType> ground_filter;
+        ground_filter.setFilterFieldName("z");
+        ground_filter.setFilterLimits(-std::numeric_limits<float>::infinity(), 0.0f);
+        ground_filter.setInputCloud(globalMapKeyFrames);
+        ground_filter.filter(*groundMap);
+        if (!groundMap->empty())
+        {
+            pcl::VoxelGrid<PointType> ground_downsample;
+            const float map_leaf = std::max(global_map_server_leaf_size, 0.1f);
+            const float ground_leaf = std::min(map_leaf, 0.3f);
+            ground_downsample.setLeafSize(ground_leaf, ground_leaf, ground_leaf);
+            ground_downsample.setInputCloud(groundMap);
+            pcl::PointCloud<PointType> ground_tmp;
+            ground_downsample.filter(ground_tmp);
+            *groundMap = ground_tmp;
+        }
+
+
+
+        const bfs::path map_dir = ensure_map_directory_path();
+        if (map_dir.empty())
+        {
+            ROS_WARN("Unable to save maps: map directory is not available.");
+        }
+        else
+        {
+            if (globalMapKeyFrames->empty())
+            {
+                ROS_WARN("Raw map is empty, skip saving Map/*.pcd");
+            }
+            else
+            {
+                const bfs::path raw_path = map_dir / "raw_map.pcd";
+                pcl::io::savePCDFileBinary(raw_path.string(), *globalMapKeyFramesRaw);
+                ROS_INFO_STREAM("Raw map saved to " << raw_path.string());
+
+                const bfs::path map_path = map_dir / "map.pcd";
+                pcl::io::savePCDFileBinary(map_path.string(), *globalMapKeyFrames);
+                ROS_INFO_STREAM("Downsampled map saved to " << map_path.string());
+
+                if (groundMap && !groundMap->empty())
+                {
+                    const bfs::path ground_path = map_dir / "ground_map.pcd";
+                    pcl::io::savePCDFileBinary(ground_path.string(), *groundMap);
+                    ROS_INFO_STREAM("Ground map saved to " << ground_path.string());
+                }
+                else
+                {
+                    ROS_WARN("Ground map is empty, skip saving Map/ground_map.pcd");
+                }
+            }
+        }
+    }
 }
 
 // 存储地图
@@ -1571,4 +1640,35 @@ void publish_global_path()
         global_path.header.frame_id = map_frame;
         pub_map_path.publish(global_path);
     }
-} 
+    if (pubPathMappedCloud.getNumSubscribers() != 0 && !global_path.poses.empty())
+    {
+            pcl::PointCloud<PointType> pathCloud;
+            pathCloud.points.reserve(global_path.poses.size());
+            for (size_t idx = 0; idx < global_path.poses.size(); ++idx)
+            {
+                PointType pt;
+                const auto &pose = global_path.poses[idx].pose.position;
+                pt.x = pose.x;
+                pt.y = pose.y;
+                pt.z = pose.z;
+                pt.intensity = static_cast<float>(idx);
+                pathCloud.push_back(pt);
+            }
+            pathCloud.width = pathCloud.size();
+            pathCloud.height = 1;
+            pathCloud.is_dense = false;
+            sensor_msgs::PointCloud2 pathMsg;
+            pcl::toROSMsg(pathCloud, pathMsg);
+            pathMsg.header.stamp = global_path.header.stamp;
+            pathMsg.header.frame_id = global_path.header.frame_id;
+            pubPathMappedCloud.publish(pathMsg);
+    }
+
+    if (pubGpsMappedCloud.getNumSubscribers() != 0 && cloudKeyGPSPoses3D && !cloudKeyGPSPoses3D->empty()) {
+        sensor_msgs::PointCloud2 gpsCloudMsg;
+        pcl::toROSMsg(*cloudKeyGPSPoses3D, gpsCloudMsg);
+        gpsCloudMsg.header.stamp = ros::Time().fromSec(lidar_end_time);
+        gpsCloudMsg.header.frame_id = map_frame;
+        pubGpsMappedCloud.publish(gpsCloudMsg);
+    }
+}
