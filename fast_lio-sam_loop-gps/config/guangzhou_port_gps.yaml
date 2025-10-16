@@ -1,7 +1,9 @@
 common:
-    lid_topic:  "/lidar_odom_node/meta_cloud"
+    lid_topic:  "/top/rslidar_points"
     imu_topic:  "/ins_driver/imu"
-    gps_topic:  "/ins_driver/fix"
+    gps_topic:  "/novatel718d/pos"
+    # lid_topic:  "/lidar_odom_node/meta_cloud"
+    # gps_topic:  "/ins_driver/fix"
     gps_time_offset: 3.116
     time_sync_en: false
     time_offset_lidar_to_imu: 0.0
