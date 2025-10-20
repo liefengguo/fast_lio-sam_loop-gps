@@ -294,6 +294,7 @@ vector<gtsam::noiseModel::Diagonal::shared_ptr> loop_noise_queue;
 bool correct_fe_flag;           // 默认开启，但是如果需要进行路径规划等任务，需要关闭。
 gtsam::Pose3 correct_Tmo;       // correct_fe_flag = false时使用，需要初始化
 nav_msgs::Path global_path;     // path in map_frame
+size_t old_map_keyframe_count = 0; // count of keyframes loaded from previous map
 
 // Ros Publisher
 ros::Publisher pubLidarOdom;
@@ -388,7 +389,7 @@ shared_ptr<ImuProcess> p_imu(new ImuProcess());   // imu预处理器
 
 #include "core/fast_lio_impl.hpp"
 #include "core/back_end_impl.hpp"
-
+#include "core/load_old_map.hpp"
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "laserMapping");
@@ -646,6 +647,20 @@ int main(int argc, char** argv)
         cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
     else
         cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+    // load old map if exists
+    if (argc > 1)
+    {
+        if (LoadMap_gtsam(argv[1]))
+        {
+            ROS_INFO("\033[1;32m----> Load map from: %s\033[0m", argv[1]);
+            return 0;
+        }
+        else
+        {
+            ROS_WARN("\033[1;31m----> Failed to load map from: %s\033[0m", argv[1]);
+            return -1;
+        }
+    }
     
     /*** ROS subscribe initialization ***/
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
