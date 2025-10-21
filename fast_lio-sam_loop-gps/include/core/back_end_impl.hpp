@@ -17,6 +17,8 @@
 
 #include <gtsam/slam/dataset.h>
 
+extern bool PublishPreloadedRawMap();
+
 /**
  * 更新里程计轨迹
  */
@@ -444,6 +446,13 @@ bool detect_loop_closure_distance(int *latestID, int *closestID)
 {
     int loopKeyCur = copy_cloud_key_poses_3D->size() - 1;
     int loopKeyPre = -1;
+    if(old_map_keyframe_count >0){
+        loopKeyPre = old_map_keyframe_count -1;
+    }else{
+        loopKeyPre = -1;
+    }
+        // return false;
+
 
     // check loop constraint added before
     auto it = loop_Index_container.find(loopKeyCur);
@@ -605,6 +614,12 @@ void visualize_loop_closure()
     {
       int key_cur = it->first;
       int key_pre = it->second;
+      if (key_cur < 0 || key_pre < 0)
+        continue;
+      if (key_cur >= (int)copy_cloud_key_poses_6D->size() || key_pre >= (int)copy_cloud_key_poses_6D->size())
+        continue;
+      if (key_cur == key_pre)
+        continue;
       geometry_msgs::Point p;
       p.x = copy_cloud_key_poses_6D->points[key_cur].x;
       p.y = copy_cloud_key_poses_6D->points[key_cur].y;
@@ -633,7 +648,14 @@ void loop_find_near_keyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, co
       int keyNear = key + i;
       if (keyNear < 0 || keyNear >= cloudSize )
         continue;
-      ROS_INFO("keyNear: %d, cloudSize : %d,surf_cloud_keyframes size: %d", keyNear, cloudSize, surf_cloud_keyframes.size());
+      if (keyNear >= static_cast<int>(surf_cloud_keyframes.size()))
+        continue;
+      if (!surf_cloud_keyframes[keyNear])
+        continue;
+      if (keyNear >= static_cast<int>(copy_cloud_key_poses_6D->size()))
+        continue;
+    //   ROS_INFO("keyNear: %d, cloudSize : %d,surf_cloud_keyframes size: %d", keyNear, cloudSize, surf_cloud_keyframes.size());
+    //   ROS_INFO("[debug_]key : %d , i : %d, searchNum: %d", key, i, searchNum);
       // 这里容易出现越界问题
       *nearKeyframes += *transformPointCloud(surf_cloud_keyframes[keyNear],   &copy_cloud_key_poses_6D->points[keyNear]);
     }
@@ -1078,6 +1100,12 @@ void extract_cloud(pcl::PointCloud<PointType>::Ptr cloud_to_extract)
             continue;
 
         int thisKeyInd = (int)cloud_to_extract->points[i].intensity;
+        if (thisKeyInd < 0 || thisKeyInd >= (int)cloud_key_poses_6D->size())
+            continue;
+        if (thisKeyInd >= static_cast<int>(surf_cloud_keyframes.size()))
+            continue;
+        if (!surf_cloud_keyframes[thisKeyInd])
+            continue;
         pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(surf_cloud_keyframes[thisKeyInd], &cloud_key_poses_6D->points[thisKeyInd]);
         *subMapKeyFrames += laserCloudSurfTemp;
     }
@@ -1112,7 +1140,13 @@ void publish_global_map()
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time);
 
     const bool compute_full_map = pcd_save_en;
+    const bool raw_published_now = PublishPreloadedRawMap();
     if (pubLaserCloudSurround.getNumSubscribers() == 0 && !compute_full_map)
+    {
+      if (!raw_published_now)
+        return;
+    }
+    if (raw_published_now && !compute_full_map)
       return;
     ROS_INFO("Publishing global map with %d key frames ", (int)cloud_key_poses_3D->size());
     if (cloud_key_poses_3D->points.empty() == true || cloud_key_poses_3D->size() == old_map_keyframe_count)
@@ -1152,8 +1186,15 @@ void publish_global_map()
         if (pointDistance(globalMapKeyPosesDS->points[i], cloud_key_poses_3D->back()) > global_map_visualization_search_radius)
         continue;
         int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
+        if (thisKeyInd < 0 || thisKeyInd >= (int)cloud_key_poses_6D->size())
+          continue;
+        if (thisKeyInd >= static_cast<int>(surf_cloud_keyframes.size()))
+          continue;
+        if (!surf_cloud_keyframes[thisKeyInd])
+          continue;
         *globalMapKeyFrames += *transformPointCloud(surf_cloud_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
-        *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
+        if (thisKeyInd < static_cast<int>(laser_cloud_raw_keyframes.size()) && laser_cloud_raw_keyframes[thisKeyInd])
+          *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
     }
     // downsample visualized points
     pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization
@@ -1268,6 +1309,10 @@ bool save_map_service(fast_lio_sam_loop::save_map::Request &req, fast_lio_sam_lo
         const size_t keyframe_count = surf_cloud_keyframes.size();
         for (size_t i = 0; i < keyframe_count; ++i)
         {
+            if (i >= cloud_key_poses_6D->size())
+                continue;
+            if (!surf_cloud_keyframes[i])
+                continue;
             *globalSurfCloud += *transformPointCloud(surf_cloud_keyframes[i], &cloud_key_poses_6D->points[i]);
             if (i % 50 == 0)
             {

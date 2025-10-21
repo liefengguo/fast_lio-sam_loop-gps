@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <vector>
+#include <map>
 #include <mutex>
 #include <cstdlib>
 #include <limits>
@@ -21,10 +22,22 @@
 #include "common_lib.h"
 
 #include <gtsam/navigation/GPSFactor.h>
-// #include <gtsam/noiseModel/Constrained.h>
-// #include <gtsam/noiseModel/NoiseModel.h>
+
+#include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/dataset.h>
+
+extern std::vector<pcl::PointCloud<PointType>::Ptr> surf_cloud_keyframes;
+extern std::vector<pcl::PointCloud<PointType>::Ptr> laser_cloud_raw_keyframes;
+extern pcl::PointCloud<PointType>::Ptr preloaded_raw_map;
+extern bool raw_map_needs_publish;
+extern ros::Publisher pubLaserCloudSurround;
+extern std::string map_frame;
+extern std::map<int, int> loop_Index_container;
+extern size_t old_map_gps_factor_count;
+extern std::vector<std::pair<int, int>> loop_Index_queue;
+extern std::vector<gtsam::Pose3> loop_pose_queue;
+extern std::vector<gtsam::noiseModel::Diagonal::shared_ptr> loop_noise_queue;
 
 namespace
 {
@@ -198,11 +211,121 @@ void copy_pose_to_clouds(const gtsam::Pose3 &pose, const size_t index)
     pose6D.time = 0.0;
     cloud_key_poses_6D->push_back(pose6D);
 }
+
+bool load_keyframe_pointclouds(const boost::filesystem::path &map_dir, const size_t keyframe_count)
+{
+    namespace bfs = boost::filesystem;
+
+    surf_cloud_keyframes.clear();
+    laser_cloud_raw_keyframes.clear();
+
+    if (keyframe_count == 0)
+    {
+        return true;
+    }
+
+    surf_cloud_keyframes.reserve(keyframe_count);
+    laser_cloud_raw_keyframes.reserve(keyframe_count);
+
+    const bfs::path buffer_dir = map_dir / "pcd_buffer";
+    const bool buffer_available = bfs::exists(buffer_dir) && bfs::is_directory(buffer_dir);
+    if (!buffer_available)
+    {
+        ROS_WARN_STREAM("pcd_buffer directory not found at " << buffer_dir.string() << ". Loaded clouds will be empty.");
+    }
+
+    size_t missing_files = 0;
+    size_t failed_files = 0;
+
+    for (size_t idx = 0; idx < keyframe_count; ++idx)
+    {
+        const bfs::path file_path = buffer_dir / (std::to_string(idx) + ".pcd");
+        pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>());
+        if (buffer_available && bfs::exists(file_path))
+        {
+            if (pcl::io::loadPCDFile(file_path.string(), *cloud) != 0)
+            {
+                ++failed_files;
+                cloud->clear();
+            }
+        }
+        else
+        {
+            ++missing_files;
+        }
+        surf_cloud_keyframes.push_back(cloud);
+        laser_cloud_raw_keyframes.push_back(cloud);
+    }
+
+    if (missing_files > 0)
+    {
+        ROS_WARN_STREAM("Missing " << missing_files << " keyframe PCD files under " << buffer_dir.string());
+    }
+    if (failed_files > 0)
+    {
+        ROS_WARN_STREAM("Failed to read " << failed_files << " keyframe PCD files under " << buffer_dir.string());
+    }
+
+    return !surf_cloud_keyframes.empty();
+}
+
+void load_raw_map(const boost::filesystem::path &map_dir)
+{
+    namespace bfs = boost::filesystem;
+    const bfs::path raw_path = map_dir / "raw_map.pcd";
+
+    if (!preloaded_raw_map)
+    {
+        preloaded_raw_map.reset(new pcl::PointCloud<PointType>());
+    }
+
+    if (!bfs::exists(raw_path) || !bfs::is_regular_file(raw_path))
+    {
+        ROS_WARN_STREAM("Raw map file not found at " << raw_path.string());
+        preloaded_raw_map->clear();
+        raw_map_needs_publish = false;
+        return;
+    }
+
+    if (pcl::io::loadPCDFile(raw_path.string(), *preloaded_raw_map) != 0)
+    {
+        ROS_WARN_STREAM("Failed to load raw map from " << raw_path.string());
+        preloaded_raw_map->clear();
+        raw_map_needs_publish = false;
+        return;
+    }
+
+    raw_map_needs_publish = !preloaded_raw_map->empty();
+    ROS_INFO_STREAM("Loaded raw_map.pcd with " << preloaded_raw_map->size() << " points.");
+}
 } // namespace
+
+inline bool PublishPreloadedRawMap()
+{
+    if (!raw_map_needs_publish)
+        return false;
+
+    if (!preloaded_raw_map || preloaded_raw_map->empty())
+    {
+        raw_map_needs_publish = false;
+        return false;
+    }
+
+    if (pubLaserCloudSurround.getNumSubscribers() == 0)
+    {
+        return false;
+    }
+
+    publishCloud(pubLaserCloudSurround, preloaded_raw_map, ros::Time::now(), map_frame);
+    raw_map_needs_publish = false;
+    return true;
+}
 
 bool LoadMap_gtsam(const std::string &map_path)
 {
     namespace bfs = boost::filesystem;
+
+    raw_map_needs_publish = false;
 
     const bfs::path map_dir(map_path);
     if (!validate_map_directory(map_dir))
@@ -298,6 +421,16 @@ bool LoadMap_gtsam(const std::string &map_path)
         *cloud_key_poses_6D_unoptimized = *cloud_key_poses_6D;
     }
 
+    const size_t loaded_keyframe_count = cloud_key_poses_3D->size();
+    if (!load_keyframe_pointclouds(map_dir, loaded_keyframe_count))
+    {
+        ROS_WARN("Keyframe clouds were not loaded from pcd_buffer.");
+    }
+    else
+    {
+        ROS_INFO_STREAM("Loaded " << surf_cloud_keyframes.size() << " keyframe point clouds from pcd_buffer.");
+    }
+
     if (!gps_records.empty())
     {
         for (size_t i = 0; i < gps_records.size(); ++i)
@@ -316,6 +449,8 @@ bool LoadMap_gtsam(const std::string &map_path)
         // Add gps factor at keyframe: 10,gps_index_container: 5,size: 6 
         ROS_INFO("Total  gps_records to append: %zu, keyframeGPSfactor :%zu,gps_index_container: %zu, cloudKeyGPSPoses3D size : %zu", gps_records.size(), keyframeGPSfactor.size(), gps_index_container.size(), cloudKeyGPSPoses3D->size());
     }
+
+    load_raw_map(map_dir);
 
     try
     {
@@ -342,11 +477,37 @@ bool LoadMap_gtsam(const std::string &map_path)
 
     old_map_keyframe_count = cloud_key_poses_3D->size();
     old_map_gps_factor_count = keyframeGPSfactor.size();
+
+    loop_Index_container.clear();
+    loop_Index_queue.clear();
+    loop_pose_queue.clear();
+    loop_noise_queue.clear();
+    for (size_t i = 0; i < old_map_keyframe_count; ++i)
+    {
+        loop_Index_container[static_cast<int>(i)] = static_cast<int>(i);
+    }
+    for (const auto &factor : graph)
+    {
+        const auto between = boost::dynamic_pointer_cast<gtsam::BetweenFactor<gtsam::Pose3>>(factor);
+        if (!between)
+            continue;
+        const gtsam::Key key1 = between->key1();
+        const gtsam::Key key2 = between->key2();
+        if (key1 >= old_map_keyframe_count || key2 >= old_map_keyframe_count)
+            continue;
+        const auto separation = std::llabs(static_cast<long long>(key1) - static_cast<long long>(key2));
+        if (separation <= 1)
+            continue;
+        const int newer = static_cast<int>(std::max(key1, key2));
+        const int older = static_cast<int>(std::min(key1, key2));
+        loop_Index_container[newer] = older;
+    }
+
     ROS_INFO("Loaded %zu keyframes from previous map.", old_map_keyframe_count);
     ROS_INFO("Loaded factor graph with %zu factors.", graph.size());
 
-    // gtsam_graph.resize(0);
-    // initial_estimate.clear();
+    gtsam_graph.resize(0);
+    initial_estimate.clear();
 
     return true;
 }
