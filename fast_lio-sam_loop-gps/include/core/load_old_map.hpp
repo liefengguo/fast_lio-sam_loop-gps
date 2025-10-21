@@ -382,6 +382,7 @@ bool LoadMap_gtsam(const std::string &map_path)
     }
 
     const bfs::path pose_graph_path = resolve_pose_graph_path(map_dir);
+    ROS_INFO("Loading map from directory: %s", pose_graph_path.string().c_str());
     if (!bfs::exists(pose_graph_path))
     {
         ROS_WARN("Pose graph file %s does not exist.", pose_graph_path.string().c_str());

@@ -653,6 +653,7 @@ int main(int argc, char** argv)
     // load old map if exists
     if (argc > 1)
     {
+        ROS_INFO("\033[1;32m----> Map file path provided: %s\033[0m", argv[1]);
         if (LoadMap_gtsam(argv[1]))
         {
             ROS_INFO("\033[1;32m----> Load map from: %s\033[0m", argv[1]);
@@ -699,7 +700,6 @@ int main(int argc, char** argv)
     pubIcpKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_corrected_cloud", 1);
     pubLoopConstraintEdge = nh.advertise<visualization_msgs::MarkerArray>("/loop/loop_closure_constraints", 1);
     pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("mapping", 1);
-    // PublishPreloadedRawMap();
     pubGPSOdometry = nh.advertise<sensor_msgs::NavSatFix>("gps/odometry_gps", 1);
     pub_map_path = nh.advertise<nav_msgs::Path> ("/map_path", 100000);
 

@@ -4,7 +4,7 @@ project(fast_lio_sam_loop)
 # SET(CMAKE_BUILD_TYPE "Debug")  
 # set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
 
-SET(CMAKE_BUILD_TYPE "debug")  
+SET(CMAKE_BUILD_TYPE "RELEASE")  
 
 ADD_COMPILE_OPTIONS(-std=c++14 )
 set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
