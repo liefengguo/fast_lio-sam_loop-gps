@@ -1,5 +1,5 @@
 <launch>
-  <arg name="old_map" default=""/>
+  <arg name="old_map" default="/home/glf/Map/test_fastlio/Map/"/>
   <arg name="rviz" default="true" />
   <arg name="use_sim_time" default="true" />
   <arg name="record_bag" default="false" />
@@ -17,7 +17,7 @@
   <param name="cube_side_length" type="double" value="1000" />
   <param name="runtime_pos_log_enable" type="bool" value="1" />
 
-  <node pkg="fast_lio_sam_loop" type="fastlio_mapping" name="laserMapping" output="screen" args="$(arg old_map)"/>
+  <node pkg="fast_lio_sam_loop" type="fastlio_mapping" name="laserMapping" output="screen" args="$(arg old_map)"  launch-prefix="gdb -q -ex  run --args" />
   <node pkg="fast_lio_sam_loop" type="fast_lio_sam_loop_gpsOdometry" name="fast_lio_sam_loop_gpsOdometry" output="screen"/>
 
   <group if="$(arg record_bag)">

@@ -295,7 +295,7 @@ bool correct_fe_flag;           // 默认开启，但是如果需要进行路径
 gtsam::Pose3 correct_Tmo;       // correct_fe_flag = false时使用，需要初始化
 nav_msgs::Path global_path;     // path in map_frame
 size_t old_map_keyframe_count = 0; // count of keyframes loaded from previous map
-
+size_t old_map_gps_factor_count = 0; // count of gps factors loaded from previous map
 // Ros Publisher
 ros::Publisher pubLidarOdom;
 ros::Publisher pubLaserCloudFull_lidar;
@@ -653,7 +653,7 @@ int main(int argc, char** argv)
         if (LoadMap_gtsam(argv[1]))
         {
             ROS_INFO("\033[1;32m----> Load map from: %s\033[0m", argv[1]);
-            return 0;
+            // return 0;
         }
         else
         {

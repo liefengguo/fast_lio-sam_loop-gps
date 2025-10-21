@@ -185,8 +185,13 @@ inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::s
                 }
 
                 gps_edges.push_back({pose_id, measurement, information_diag});
+                // ROS_INFO("Appending GPS edge for pose %zu: measurement (%.6f, %.6f, %.6f), information diag (%.6f, %.6f, %.6f)",
+                //          pose_id,
+                //          measurement.x(), measurement.y(), measurement.z(),
+                //          information_diag.x(), information_diag.y(), information_diag.z());
             }
-
+            ROS_INFO("Total GPS edges to append: %zu, keyframeGPSfactor :%zu,gps_index_container: %zu", gps_edges.size(), keyframeGPSfactor.size(), gps_index_container.size());
+            // 调用有两次了，可能会有重复添加的问题（maybe）
             if (!gps_edges.empty())
             {
                 auto keys = estimate.keys();
@@ -472,7 +477,7 @@ bool detect_loop_closure_distance(int *latestID, int *closestID)
 
 void perform_loop_closure()
 {
-    if (cloud_key_poses_3D->points.empty() == true)
+    if (cloud_key_poses_3D->points.empty() == true  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
     
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time); //  时间戳
@@ -628,7 +633,8 @@ void loop_find_near_keyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, co
       int keyNear = key + i;
       if (keyNear < 0 || keyNear >= cloudSize )
         continue;
-        
+      ROS_INFO("keyNear: %d, cloudSize : %d,surf_cloud_keyframes size: %d", keyNear, cloudSize, surf_cloud_keyframes.size());
+      // 这里容易出现越界问题
       *nearKeyframes += *transformPointCloud(surf_cloud_keyframes[keyNear],   &copy_cloud_key_poses_6D->points[keyNear]);
     }
 
@@ -881,37 +887,61 @@ void save_keyframes_and_factor_wt_update_ikf()
 
 void add_odom_factor()
 {
-    if (cloud_key_poses_3D->points.empty())
+    const size_t pose_count = cloud_key_poses_3D->size();
+    const bool has_old_map = (old_map_keyframe_count > 0);
+    const bool first_new_keyframe = has_old_map && (pose_count == old_map_keyframe_count);
+
+    if (pose_count == 0)
     {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished()); // rad*rad, meter*meter
         gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
         initial_estimate.insert(0, trans2gtsamPose(transformTobeMapped));
         // std::cout << "PriorFactor:" << trans2gtsamPose(transformTobeMapped) << std::endl;
         // std::cout << "add-prior factor!" << std::endl;
-    }else{
+    }
+    else if (first_new_keyframe)
+    {
+        gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished());
+        gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(pose_count, gtsam::Pose3(), priorNoise));
+        initial_estimate.insert(pose_count, gtsam::Pose3());
+    }
+    else
+    {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
         gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloud_key_poses_6D->points.back());
         gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);
-        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloud_key_poses_3D->size()-1, cloud_key_poses_3D->size(), poseFrom.between(poseTo), odometryNoise));
-        initial_estimate.insert(cloud_key_poses_3D->size(), poseTo);
+        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(pose_count-1, pose_count, poseFrom.between(poseTo), odometryNoise));
+        initial_estimate.insert(pose_count, poseTo);
     }
 }
 
 void add_odom_factor_fastlio()
 {
-    if (cloud_key_poses_3D->points.empty())
+    const size_t pose_count = cloud_key_poses_3D->size();
+    const bool has_old_map = (old_map_keyframe_count > 0);
+    const bool first_new_keyframe = has_old_map && (pose_count == old_map_keyframe_count);
+
+    if (pose_count == 0)
     {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished()); // rad*rad, meter*meter
         gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
         initial_estimate.insert(0, trans2gtsamPose(transformTobeMapped));
-    }else{
+    }
+    else if (first_new_keyframe)
+    {
+        gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished());
+        gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(pose_count, gtsam::Pose3(), priorNoise));
+        initial_estimate.insert(pose_count, gtsam::Pose3());
+    }
+    else
+    {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
         gtsam::Pose3 poseFrom = stateIkfomTogtsamPose3(last_odom_kf_state);  // diff from above function
         gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);        // 这里是里程计估计的位姿
-        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloud_key_poses_3D->size()-1, cloud_key_poses_3D->size(), poseFrom.between(poseTo), odometryNoise));
+        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(pose_count-1, pose_count, poseFrom.between(poseTo), odometryNoise));
         // 进行预测矫正, diff from above function
         poseTo = correct_Tmo * poseTo;
-        initial_estimate.insert(cloud_key_poses_3D->size(), poseTo);             // diff from above function
+        initial_estimate.insert(pose_count, poseTo);             // diff from above function
     }
 }
 
@@ -937,7 +967,7 @@ void add_loop_factor()
 
 void correct_poses()  // 回环成功的话，更新轨迹。并且if correct_fe_flag == true, 重建Ikd-tree地图
 {
-    if (cloud_key_poses_3D->points.empty())
+    if (cloud_key_poses_3D->points.empty()  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
 
     if (aloop_Is_closed == true)
@@ -974,7 +1004,7 @@ void correct_poses()  // 回环成功的话，更新轨迹。并且if correct_fe
 
 void correct_poses_wt_rebuild_ikd()
 {
-    if (cloud_key_poses_3D->points.empty())
+    if (cloud_key_poses_3D->points.empty()  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
 
     if (aloop_Is_closed == true)
@@ -1084,8 +1114,8 @@ void publish_global_map()
     const bool compute_full_map = pcd_save_en;
     if (pubLaserCloudSurround.getNumSubscribers() == 0 && !compute_full_map)
       return;
-
-    if (cloud_key_poses_3D->points.empty() == true)
+    ROS_INFO("Publishing global map with %d key frames ", (int)cloud_key_poses_3D->size());
+    if (cloud_key_poses_3D->points.empty() == true || cloud_key_poses_3D->size() == old_map_keyframe_count)
       return;
 
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
@@ -1382,7 +1412,7 @@ double eps_cam)
 // 初始化gps，并且无视Kf检测，创建第一个gps因子
 void update_initial_guess()
 {
-    if (cloud_key_poses_3D->points.empty()) {
+    if (cloud_key_poses_3D->points.empty() || cloud_key_poses_3D->size() == old_map_keyframe_count) {
         system_initialized = false;
         if (use_gps) 
         {
@@ -1512,8 +1542,11 @@ void add_gps_factor()
 {
     if (gpsQueue.empty()) 
         return;
-    
     if (cloud_key_poses_3D->points.empty() || cloud_key_poses_3D->points.size() == 1)
+        return;
+
+    const size_t pose_count = cloud_key_poses_3D->size();
+    if (old_map_keyframe_count == pose_count || old_map_keyframe_count + 1 == pose_count)
             return;
     
     // last gps position
@@ -1588,14 +1621,18 @@ void add_gps_factor()
             ROS_INFO("Accumulated gps factor: %ld", keyframeGPSfactor.size());
             return;
         }
-
+        // add gps factor to graph
+        // 重复添加GPS因子了，如果是增量建图的话，只需要添加新的因子 ,so use old_map_gps_factor_count 
         if (!gpsTransfromInit) {
             ROS_INFO("Initialize GNSS transform!");
-            for (int i = 0; i < keyframeGPSfactor.size(); ++i) {
+            for (int i = old_map_gps_factor_count; i < keyframeGPSfactor.size(); ++i) {
                 gtsam::GPSFactor gpsFactor = keyframeGPSfactor.at(i);
                 gtsam_graph.add(gpsFactor);
                 gps_index_container[gpsFactor.key()] = i;
+                // Add gps factor at keyframe: 10,gps_index_container: 5,size: 6
+                ROS_INFO("Add gps factor at keyframe: %ld,gps_index_container: %ld,size: %ld", gpsFactor.key(), gps_index_container[gpsFactor.key()], gps_index_container.size());
             }
+            ROS_INFO("keyframeGPSfactor size: %ld ,gps_index_container size: %ld, cloudKeyGPSPoses3D size: %ld", keyframeGPSfactor.size(), gps_index_container.size(), cloudKeyGPSPoses3D->size());
             gpsTransfromInit = true;
         } else {
             gtsam_graph.add(gps_factor);
