@@ -372,6 +372,7 @@ Eigen::Vector3d originLLA;
 bool system_initialized = false;
 bool gpsTransfromInit = false;
 GeographicLib::LocalCartesian geo_converter;
+bool origin_loaded_from_map = false;
 
 ros::Subscriber subGPS;
 ros::Publisher pub_map_path;         // global_path
@@ -698,7 +699,7 @@ int main(int argc, char** argv)
     pubIcpKeyFrames = nh.advertise<sensor_msgs::PointCloud2>("loop/icp_loop_closure_corrected_cloud", 1);
     pubLoopConstraintEdge = nh.advertise<visualization_msgs::MarkerArray>("/loop/loop_closure_constraints", 1);
     pubLaserCloudSurround = nh.advertise<sensor_msgs::PointCloud2>("mapping", 1);
-    PublishPreloadedRawMap();
+    // PublishPreloadedRawMap();
     pubGPSOdometry = nh.advertise<sensor_msgs::NavSatFix>("gps/odometry_gps", 1);
     pub_map_path = nh.advertise<nav_msgs::Path> ("/map_path", 100000);
 

@@ -38,6 +38,9 @@ extern size_t old_map_gps_factor_count;
 extern std::vector<std::pair<int, int>> loop_Index_queue;
 extern std::vector<gtsam::Pose3> loop_pose_queue;
 extern std::vector<gtsam::noiseModel::Diagonal::shared_ptr> loop_noise_queue;
+extern Eigen::Vector3d originLLA;
+extern GeographicLib::LocalCartesian geo_converter;
+extern bool origin_loaded_from_map;
 
 namespace
 {
@@ -298,6 +301,51 @@ void load_raw_map(const boost::filesystem::path &map_dir)
     raw_map_needs_publish = !preloaded_raw_map->empty();
     ROS_INFO_STREAM("Loaded raw_map.pcd with " << preloaded_raw_map->size() << " points.");
 }
+
+bool load_origin_file(const boost::filesystem::path &map_dir)
+{
+    namespace bfs = boost::filesystem;
+    const bfs::path origin_path = map_dir / "origin.txt";
+    if (!bfs::exists(origin_path) || !bfs::is_regular_file(origin_path))
+    {
+        ROS_WARN_STREAM("origin.txt not found at " << origin_path.string());
+        return false;
+    }
+
+    std::ifstream ifs(origin_path.string());
+    if (!ifs.is_open())
+    {
+        ROS_WARN_STREAM("Failed to open origin.txt at " << origin_path.string());
+        return false;
+    }
+
+    std::string token;
+    double lat = 0.0, lon = 0.0, alt = 0.0;
+    bool parsed = false;
+    while (ifs >> token)
+    {
+        if (token == "LLA:" || token == "LLA")
+        {
+            if (ifs >> lat >> lon >> alt)
+            {
+                parsed = true;
+                break;
+            }
+        }
+    }
+
+    if (!parsed)
+    {
+        ROS_WARN_STREAM("Failed to parse origin.txt at " << origin_path.string());
+        return false;
+    }
+
+    originLLA = Eigen::Vector3d(lat, lon, alt);
+    geo_converter.Reset(lat, lon, alt);
+    origin_loaded_from_map = true;
+    ROS_INFO_STREAM("Loaded origin LLA from origin.txt: " << originLLA.transpose());
+    return true;
+}
 } // namespace
 
 inline bool PublishPreloadedRawMap()
@@ -428,7 +476,7 @@ bool LoadMap_gtsam(const std::string &map_path)
     }
     else
     {
-        ROS_INFO_STREAM("Loaded " << surf_cloud_keyframes.size() << " keyframe point clouds from pcd_buffer.");
+        ROS_INFO_STREAM("[LOADED FINISHED!!!]: Loaded " << surf_cloud_keyframes.size() << " keyframe point clouds from pcd_buffer.");
     }
 
     if (!gps_records.empty())
@@ -451,6 +499,10 @@ bool LoadMap_gtsam(const std::string &map_path)
     }
 
     load_raw_map(map_dir);
+    if (!load_origin_file(map_dir))
+    {
+        origin_loaded_from_map = false;
+    }
 
     try
     {
@@ -502,7 +554,7 @@ bool LoadMap_gtsam(const std::string &map_path)
         const int older = static_cast<int>(std::min(key1, key2));
         loop_Index_container[newer] = older;
     }
-
+    ROS_INFO("Established %zu loop index entries from loaded map.", loop_Index_container.size());
     ROS_INFO("Loaded %zu keyframes from previous map.", old_map_keyframe_count);
     ROS_INFO("Loaded factor graph with %zu factors.", graph.size());
 

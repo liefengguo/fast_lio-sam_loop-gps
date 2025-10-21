@@ -1494,30 +1494,41 @@ void update_initial_guess()
                 }
 
                 /** we store the origin wgs84 coordinate points in covariance[1]-[3] */
-                originLLA.setIdentity();
-                originLLA = Eigen::Vector3d(alignedGPS.pose.covariance[1], // ! 是lla，不是cov
+                Eigen::Vector3d currentLLA(alignedGPS.pose.covariance[1], // ! 是lla，不是cov
                                             alignedGPS.pose.covariance[2],
                                             alignedGPS.pose.covariance[3]);
-                /** set your map origin points */
-                geo_converter.Reset(originLLA[0], originLLA[1], originLLA[2]);
+                const bool incremental_mode = (old_map_keyframe_count > 0);
+                const bool origin_previously_loaded = origin_loaded_from_map;
+                const bool keep_existing_origin = incremental_mode && origin_loaded_from_map;
+
+                if (!keep_existing_origin)
+                {
+                    originLLA = currentLLA;
+                    geo_converter.Reset(originLLA[0], originLLA[1], originLLA[2]);
+                    origin_loaded_from_map = true;
+                }
+
                 // WGS84->ENU, must be (0,0,0)
                 Eigen::Vector3d enu;
-                geo_converter.Forward(originLLA[0], originLLA[1], originLLA[2], enu[0], enu[1], enu[2]);
+                geo_converter.Forward(currentLLA[0], currentLLA[1], currentLLA[2], enu[0], enu[1], enu[2]);
                 ROS_INFO("Origin LLA_______: %f, %f, %f", originLLA[0], originLLA[1], originLLA[2]);
-                ROS_INFO("Origin ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
-                const bfs::path map_dir = ensure_map_directory_path();
-                if (!map_dir.empty())
+                ROS_INFO("Current ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
+                if (!incremental_mode || !origin_previously_loaded)
                 {
-                    const bfs::path origin_path = map_dir / "origin.txt";
-                    std::ofstream origin_ofs(origin_path.string(), std::ios::out);
-                    if (origin_ofs.is_open())
+                    const bfs::path map_dir = ensure_map_directory_path();
+                    if (!map_dir.empty())
                     {
-                        origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
-                        origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
-                    }
-                    else
-                    {
-                        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                        const bfs::path origin_path = map_dir / "origin.txt";
+                        std::ofstream origin_ofs(origin_path.string(), std::ios::out);
+                        if (origin_ofs.is_open())
+                        {
+                            origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
+                            origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
+                        }
+                        else
+                        {
+                            ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                        }
                     }
                 }
 
@@ -1531,7 +1542,7 @@ void update_initial_guess()
                             .getRPY(roll, pitch, yaw);
                     std::cout << "initial gps yaw: " << yaw << std::endl;
                     std::cout << "GPS Position: " << enu.transpose() << std::endl;
-                    std::cout << "GPS LLA: " << originLLA.transpose() << std::endl;
+                    std::cout << "GPS LLA: " << currentLLA.transpose() << std::endl;
                 }
                 
 
