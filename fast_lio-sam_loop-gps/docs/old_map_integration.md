@@ -136,11 +136,29 @@
   ```c++
   if (pose_count <= std::max<size_t>(old_map_keyframe_count, 1)) return;
   ```
+- `save_keyframes_and_factor_wt_update_ikf()` 中捕获 ISAM 异常并跳过当前帧：
+  ```c++
+  bool isam_update_ok = true;
+  try {
+      isam->update(gtsam_graph, initial_estimate);
+  } catch (const std::exception &e) {
+      ROS_ERROR_STREAM("ISAM2 update error: " << e.what());
+      gtsam_graph.print("new factors");
+      initial_estimate.print("new values");
+      isam_update_ok = false;
+  }
+  if (!isam_update_ok) {
+      gtsam_graph.resize(0);
+      initial_estimate.clear();
+      return;
+  }
+  ```
 
 ### 为什么要这样做
 - 如果第一帧新节点沿用旧姿态，会把旧图的末端作为新会话起点。例如旧图最后停在码头东侧，而新会话在西侧启动，直接沿用旧位姿会导致估计在西侧瞬间跳到东侧，轨迹完全错位。
 - 添加单位先验让新会话从“传感器当前估计”开始，相当于对旧图加一个固定参考。这样旧地图保持锁定，新地图仅围绕当前估计小范围调整。
 - GPS 因子若重复作用于旧节点会叠加历史观测。例如历史 GPS 已锁定码头原点，如果增量阶段再次给旧节点加相同 GPS 因子，会人为放大该节点权重，导致新节点优化时无法正确匹配真实观测。
+- release 模式下如果 `isam->update()` 抛出异常（常见于输入退化因子或数据同步异常），旧版本直接 `abort()` 会导致整节点退出。现在通过捕获异常记录现场并跳过当前帧，可以让系统继续运行，同时保留问题因子供线下排查。
 
 ## 5. 可视化与导出流程的健壮性
 
@@ -185,6 +203,18 @@
    - GPS 因子写入时跳过旧索引。
    - `geo_converter`、`originLLA` 仅在首次建图时刷新。
    - 回环容器只允许新索引参与判定，避免旧节点重复触发。
+   - `update_initial_guess()` 会在增量模式下保持原有 `originLLA`，只在纯新建图或缺失 origin 时重置：
+     ```c++
+     const bool incremental_mode = (old_map_keyframe_count > 0);
+     const bool keep_existing_origin = incremental_mode && origin_loaded_from_map;
+     if (!keep_existing_origin) {
+         originLLA = currentLLA;
+         geo_converter.Reset(originLLA[0], originLLA[1], originLLA[2]);
+         origin_loaded_from_map = true;
+     }
+     ```
+
+这样可避免增量模式下因为 GPS 初始化再次重置 ENU 原点，导致旧图与新图在坐标上产生数米级偏移；当旧 origin 缺失时仍会在首次 GPS 到来时自动写入，保持新建图流程不变。
 
 通过这些变量的联动，系统在“旧图固定 + 新图增量”模式下保持一致的坐标系与优化状态。
 
