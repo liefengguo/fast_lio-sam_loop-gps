@@ -17,6 +17,8 @@
 
 #include <gtsam/slam/dataset.h>
 
+extern bool PublishPreloadedRawMap();
+
 /**
  * 更新里程计轨迹
  */
@@ -185,8 +187,13 @@ inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::s
                 }
 
                 gps_edges.push_back({pose_id, measurement, information_diag});
+                // ROS_INFO("Appending GPS edge for pose %zu: measurement (%.6f, %.6f, %.6f), information diag (%.6f, %.6f, %.6f)",
+                //          pose_id,
+                //          measurement.x(), measurement.y(), measurement.z(),
+                //          information_diag.x(), information_diag.y(), information_diag.z());
             }
-
+            // ROS_INFO("Total GPS edges to append: %zu, keyframeGPSfactor :%zu,gps_index_container: %zu", gps_edges.size(), keyframeGPSfactor.size(), gps_index_container.size());
+            // 调用有两次了，可能会有重复添加的问题（maybe）
             if (!gps_edges.empty())
             {
                 auto keys = estimate.keys();
@@ -439,6 +446,13 @@ bool detect_loop_closure_distance(int *latestID, int *closestID)
 {
     int loopKeyCur = copy_cloud_key_poses_3D->size() - 1;
     int loopKeyPre = -1;
+    if(old_map_keyframe_count >0){
+        loopKeyPre = old_map_keyframe_count -1;
+    }else{
+        loopKeyPre = -1;
+    }
+        // return false;
+
 
     // check loop constraint added before
     auto it = loop_Index_container.find(loopKeyCur);
@@ -472,7 +486,7 @@ bool detect_loop_closure_distance(int *latestID, int *closestID)
 
 void perform_loop_closure()
 {
-    if (cloud_key_poses_3D->points.empty() == true)
+    if (cloud_key_poses_3D->points.empty() == true  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
     
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time); //  时间戳
@@ -600,6 +614,12 @@ void visualize_loop_closure()
     {
       int key_cur = it->first;
       int key_pre = it->second;
+      if (key_cur < 0 || key_pre < 0)
+        continue;
+      if (key_cur >= (int)copy_cloud_key_poses_6D->size() || key_pre >= (int)copy_cloud_key_poses_6D->size())
+        continue;
+      if (key_cur == key_pre)
+        continue;
       geometry_msgs::Point p;
       p.x = copy_cloud_key_poses_6D->points[key_cur].x;
       p.y = copy_cloud_key_poses_6D->points[key_cur].y;
@@ -628,7 +648,15 @@ void loop_find_near_keyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, co
       int keyNear = key + i;
       if (keyNear < 0 || keyNear >= cloudSize )
         continue;
-        
+      if (keyNear >= static_cast<int>(surf_cloud_keyframes.size()))
+        continue;
+      if (!surf_cloud_keyframes[keyNear])
+        continue;
+      if (keyNear >= static_cast<int>(copy_cloud_key_poses_6D->size()))
+        continue;
+    //   ROS_INFO("keyNear: %d, cloudSize : %d,surf_cloud_keyframes size: %d", keyNear, cloudSize, surf_cloud_keyframes.size());
+    //   ROS_INFO("[debug_]key : %d , i : %d, searchNum: %d", key, i, searchNum);
+      // 这里容易出现越界问题
       *nearKeyframes += *transformPointCloud(surf_cloud_keyframes[keyNear],   &copy_cloud_key_poses_6D->points[keyNear]);
     }
 
@@ -881,37 +909,61 @@ void save_keyframes_and_factor_wt_update_ikf()
 
 void add_odom_factor()
 {
-    if (cloud_key_poses_3D->points.empty())
+    const size_t pose_count = cloud_key_poses_3D->size();
+    const bool has_old_map = (old_map_keyframe_count > 0);
+    const bool first_new_keyframe = has_old_map && (pose_count == old_map_keyframe_count);
+
+    if (pose_count == 0)
     {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished()); // rad*rad, meter*meter
         gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
         initial_estimate.insert(0, trans2gtsamPose(transformTobeMapped));
         // std::cout << "PriorFactor:" << trans2gtsamPose(transformTobeMapped) << std::endl;
         // std::cout << "add-prior factor!" << std::endl;
-    }else{
+    }
+    else if (first_new_keyframe)
+    {
+        gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished());
+        gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(pose_count, gtsam::Pose3(), priorNoise));
+        initial_estimate.insert(pose_count, gtsam::Pose3());
+    }
+    else
+    {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
         gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloud_key_poses_6D->points.back());
         gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);
-        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloud_key_poses_3D->size()-1, cloud_key_poses_3D->size(), poseFrom.between(poseTo), odometryNoise));
-        initial_estimate.insert(cloud_key_poses_3D->size(), poseTo);
+        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(pose_count-1, pose_count, poseFrom.between(poseTo), odometryNoise));
+        initial_estimate.insert(pose_count, poseTo);
     }
 }
 
 void add_odom_factor_fastlio()
 {
-    if (cloud_key_poses_3D->points.empty())
+    const size_t pose_count = cloud_key_poses_3D->size();
+    const bool has_old_map = (old_map_keyframe_count > 0);
+    const bool first_new_keyframe = has_old_map && (pose_count == old_map_keyframe_count);
+
+    if (pose_count == 0)
     {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished()); // rad*rad, meter*meter
         gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
         initial_estimate.insert(0, trans2gtsamPose(transformTobeMapped));
-    }else{
+    }
+    else if (first_new_keyframe)
+    {
+        gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12).finished());
+        gtsam_graph.add(gtsam::PriorFactor<gtsam::Pose3>(pose_count, gtsam::Pose3(), priorNoise));
+        initial_estimate.insert(pose_count, gtsam::Pose3());
+    }
+    else
+    {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
         gtsam::Pose3 poseFrom = stateIkfomTogtsamPose3(last_odom_kf_state);  // diff from above function
         gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);        // 这里是里程计估计的位姿
-        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloud_key_poses_3D->size()-1, cloud_key_poses_3D->size(), poseFrom.between(poseTo), odometryNoise));
+        gtsam_graph.add(gtsam::BetweenFactor<gtsam::Pose3>(pose_count-1, pose_count, poseFrom.between(poseTo), odometryNoise));
         // 进行预测矫正, diff from above function
         poseTo = correct_Tmo * poseTo;
-        initial_estimate.insert(cloud_key_poses_3D->size(), poseTo);             // diff from above function
+        initial_estimate.insert(pose_count, poseTo);             // diff from above function
     }
 }
 
@@ -937,7 +989,7 @@ void add_loop_factor()
 
 void correct_poses()  // 回环成功的话，更新轨迹。并且if correct_fe_flag == true, 重建Ikd-tree地图
 {
-    if (cloud_key_poses_3D->points.empty())
+    if (cloud_key_poses_3D->points.empty()  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
 
     if (aloop_Is_closed == true)
@@ -974,7 +1026,7 @@ void correct_poses()  // 回环成功的话，更新轨迹。并且if correct_fe
 
 void correct_poses_wt_rebuild_ikd()
 {
-    if (cloud_key_poses_3D->points.empty())
+    if (cloud_key_poses_3D->points.empty()  || cloud_key_poses_3D->size() == old_map_keyframe_count)
         return;
 
     if (aloop_Is_closed == true)
@@ -1048,6 +1100,12 @@ void extract_cloud(pcl::PointCloud<PointType>::Ptr cloud_to_extract)
             continue;
 
         int thisKeyInd = (int)cloud_to_extract->points[i].intensity;
+        if (thisKeyInd < 0 || thisKeyInd >= (int)cloud_key_poses_6D->size())
+            continue;
+        if (thisKeyInd >= static_cast<int>(surf_cloud_keyframes.size()))
+            continue;
+        if (!surf_cloud_keyframes[thisKeyInd])
+            continue;
         pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(surf_cloud_keyframes[thisKeyInd], &cloud_key_poses_6D->points[thisKeyInd]);
         *subMapKeyFrames += laserCloudSurfTemp;
     }
@@ -1082,10 +1140,16 @@ void publish_global_map()
     ros::Time timeLaserInfoStamp = ros::Time().fromSec(lidar_end_time);
 
     const bool compute_full_map = pcd_save_en;
+    const bool raw_published_now = PublishPreloadedRawMap();
     if (pubLaserCloudSurround.getNumSubscribers() == 0 && !compute_full_map)
+    {
+      if (!raw_published_now)
+        return;
+    }
+    if (raw_published_now && !compute_full_map)
       return;
-
-    if (cloud_key_poses_3D->points.empty() == true)
+    ROS_INFO("Publishing global map with %d key frames ", (int)cloud_key_poses_3D->size());
+    if (cloud_key_poses_3D->points.empty() == true || cloud_key_poses_3D->size() == old_map_keyframe_count)
       return;
 
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
@@ -1122,8 +1186,15 @@ void publish_global_map()
         if (pointDistance(globalMapKeyPosesDS->points[i], cloud_key_poses_3D->back()) > global_map_visualization_search_radius)
         continue;
         int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
+        if (thisKeyInd < 0 || thisKeyInd >= (int)cloud_key_poses_6D->size())
+          continue;
+        if (thisKeyInd >= static_cast<int>(surf_cloud_keyframes.size()))
+          continue;
+        if (!surf_cloud_keyframes[thisKeyInd])
+          continue;
         *globalMapKeyFrames += *transformPointCloud(surf_cloud_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
-        *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
+        if (thisKeyInd < static_cast<int>(laser_cloud_raw_keyframes.size()) && laser_cloud_raw_keyframes[thisKeyInd])
+          *globalMapKeyFramesRaw += *transformPointCloud(laser_cloud_raw_keyframes[thisKeyInd],    &cloud_key_poses_6D->points[thisKeyInd]);
     }
     // downsample visualized points
     pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization
@@ -1238,6 +1309,10 @@ bool save_map_service(fast_lio_sam_loop::save_map::Request &req, fast_lio_sam_lo
         const size_t keyframe_count = surf_cloud_keyframes.size();
         for (size_t i = 0; i < keyframe_count; ++i)
         {
+            if (i >= cloud_key_poses_6D->size())
+                continue;
+            if (!surf_cloud_keyframes[i])
+                continue;
             *globalSurfCloud += *transformPointCloud(surf_cloud_keyframes[i], &cloud_key_poses_6D->points[i]);
             if (i % 50 == 0)
             {
@@ -1382,7 +1457,7 @@ double eps_cam)
 // 初始化gps，并且无视Kf检测，创建第一个gps因子
 void update_initial_guess()
 {
-    if (cloud_key_poses_3D->points.empty()) {
+    if (cloud_key_poses_3D->points.empty() || cloud_key_poses_3D->size() == old_map_keyframe_count) {
         system_initialized = false;
         if (use_gps) 
         {
@@ -1419,30 +1494,52 @@ void update_initial_guess()
                 }
 
                 /** we store the origin wgs84 coordinate points in covariance[1]-[3] */
-                originLLA.setIdentity();
-                originLLA = Eigen::Vector3d(alignedGPS.pose.covariance[1], // ! 是lla，不是cov
+                Eigen::Vector3d currentLLA(alignedGPS.pose.covariance[1], // ! 是lla，不是cov
                                             alignedGPS.pose.covariance[2],
                                             alignedGPS.pose.covariance[3]);
-                /** set your map origin points */
-                geo_converter.Reset(originLLA[0], originLLA[1], originLLA[2]);
+                const bool incremental_mode = (old_map_keyframe_count > 0);
+                const bool origin_previously_loaded = origin_loaded_from_map;
+                const bool keep_existing_origin = incremental_mode && origin_loaded_from_map;
+
+                if (!keep_existing_origin)
+                {
+                    originLLA = currentLLA;
+                    geo_converter.Reset(originLLA[0], originLLA[1], originLLA[2]);
+                    origin_loaded_from_map = true;
+                }
+
                 // WGS84->ENU, must be (0,0,0)
                 Eigen::Vector3d enu;
-                geo_converter.Forward(originLLA[0], originLLA[1], originLLA[2], enu[0], enu[1], enu[2]);
+                geo_converter.Forward(currentLLA[0], currentLLA[1], currentLLA[2], enu[0], enu[1], enu[2]);
                 ROS_INFO("Origin LLA_______: %f, %f, %f", originLLA[0], originLLA[1], originLLA[2]);
-                ROS_INFO("Origin ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
-                const bfs::path map_dir = ensure_map_directory_path();
-                if (!map_dir.empty())
+                ROS_INFO("Current ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
+                if(incremental_mode)
                 {
-                    const bfs::path origin_path = map_dir / "origin.txt";
-                    std::ofstream origin_ofs(origin_path.string(), std::ios::out);
-                    if (origin_ofs.is_open())
+                    ROS_WARN("GPS init in incremental mode");
+                    state_ikfom init_old_map_state = kf.get_x();
+                    init_old_map_state.pos(0) = enu[0];
+                    init_old_map_state.pos(1) = enu[1];
+                    init_old_map_state.pos(2) = enu[2];
+                    Eigen::Quaterniond q = EulerToQuat(roll, pitch, yaw);
+                    init_old_map_state.rot = q;
+                    kf.change_x(init_old_map_state);
+                }
+                if (!incremental_mode || !origin_previously_loaded)
+                {
+                    const bfs::path map_dir = ensure_map_directory_path();
+                    if (!map_dir.empty())
                     {
-                        origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
-                        origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
-                    }
-                    else
-                    {
-                        ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                        const bfs::path origin_path = map_dir / "origin.txt";
+                        std::ofstream origin_ofs(origin_path.string(), std::ios::out);
+                        if (origin_ofs.is_open())
+                        {
+                            origin_ofs << std::setprecision(std::numeric_limits<double>::max_digits10);
+                            origin_ofs << "LLA: " << originLLA.transpose() << std::endl;
+                        }
+                        else
+                        {
+                            ROS_WARN_STREAM_THROTTLE(5.0, "Failed to write origin.txt at " << origin_path.string());
+                        }
                     }
                 }
 
@@ -1456,7 +1553,7 @@ void update_initial_guess()
                             .getRPY(roll, pitch, yaw);
                     std::cout << "initial gps yaw: " << yaw << std::endl;
                     std::cout << "GPS Position: " << enu.transpose() << std::endl;
-                    std::cout << "GPS LLA: " << originLLA.transpose() << std::endl;
+                    std::cout << "GPS LLA: " << currentLLA.transpose() << std::endl;
                 }
                 
 
@@ -1512,8 +1609,11 @@ void add_gps_factor()
 {
     if (gpsQueue.empty()) 
         return;
-    
     if (cloud_key_poses_3D->points.empty() || cloud_key_poses_3D->points.size() == 1)
+        return;
+
+    const size_t pose_count = cloud_key_poses_3D->size();
+    if (old_map_keyframe_count == pose_count || old_map_keyframe_count + 1 == pose_count)
             return;
     
     // last gps position
@@ -1588,14 +1688,18 @@ void add_gps_factor()
             ROS_INFO("Accumulated gps factor: %ld", keyframeGPSfactor.size());
             return;
         }
-
+        // add gps factor to graph
+        // 重复添加GPS因子了，如果是增量建图的话，只需要添加新的因子 ,so use old_map_gps_factor_count 
         if (!gpsTransfromInit) {
             ROS_INFO("Initialize GNSS transform!");
-            for (int i = 0; i < keyframeGPSfactor.size(); ++i) {
+            for (int i = old_map_gps_factor_count; i < keyframeGPSfactor.size(); ++i) {
                 gtsam::GPSFactor gpsFactor = keyframeGPSfactor.at(i);
                 gtsam_graph.add(gpsFactor);
                 gps_index_container[gpsFactor.key()] = i;
+                // Add gps factor at keyframe: 10,gps_index_container: 5,size: 6
+                ROS_INFO("Add gps factor at keyframe: %ld,gps_index_container: %ld,size: %ld", gpsFactor.key(), gps_index_container[gpsFactor.key()], gps_index_container.size());
             }
+            ROS_INFO("keyframeGPSfactor size: %ld ,gps_index_container size: %ld, cloudKeyGPSPoses3D size: %ld", keyframeGPSfactor.size(), gps_index_container.size(), cloudKeyGPSPoses3D->size());
             gpsTransfromInit = true;
         } else {
             gtsam_graph.add(gps_factor);

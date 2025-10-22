@@ -294,7 +294,8 @@ vector<gtsam::noiseModel::Diagonal::shared_ptr> loop_noise_queue;
 bool correct_fe_flag;           // 默认开启，但是如果需要进行路径规划等任务，需要关闭。
 gtsam::Pose3 correct_Tmo;       // correct_fe_flag = false时使用，需要初始化
 nav_msgs::Path global_path;     // path in map_frame
-
+size_t old_map_keyframe_count = 0; // count of keyframes loaded from previous map
+size_t old_map_gps_factor_count = 0; // count of gps factors loaded from previous map
 // Ros Publisher
 ros::Publisher pubLidarOdom;
 ros::Publisher pubLaserCloudFull_lidar;
@@ -363,12 +364,15 @@ std::vector<gtsam::GPSFactor> keyframeGPSfactor;
 std::deque<nav_msgs::Odometry> gpsQueue;
 pcl::PointCloud<PointType>::Ptr cloudKeyGPSPoses3D;
 map<int, int> gps_index_container;
+pcl::PointCloud<PointType>::Ptr preloaded_raw_map;
+bool raw_map_needs_publish = false;
 
 std::mutex mtxGpsInfo;
 Eigen::Vector3d originLLA;
 bool system_initialized = false;
 bool gpsTransfromInit = false;
 GeographicLib::LocalCartesian geo_converter;
+bool origin_loaded_from_map = false;
 
 ros::Subscriber subGPS;
 ros::Publisher pub_map_path;         // global_path
@@ -388,7 +392,7 @@ shared_ptr<ImuProcess> p_imu(new ImuProcess());   // imu预处理器
 
 #include "core/fast_lio_impl.hpp"
 #include "core/back_end_impl.hpp"
-
+#include "core/load_old_map.hpp"
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "laserMapping");
@@ -646,6 +650,21 @@ int main(int argc, char** argv)
         cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
     else
         cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+    // load old map if exists
+    if (argc > 1)
+    {
+        ROS_INFO("\033[1;32m----> Map file path provided: %s\033[0m", argv[1]);
+        if (LoadMap_gtsam(argv[1]))
+        {
+            ROS_INFO("\033[1;32m----> Load map from: %s\033[0m", argv[1]);
+            // return 0;
+        }
+        else
+        {
+            ROS_WARN("\033[1;31m----> Failed to load map from: %s\033[0m", argv[1]);
+            return -1;
+        }
+    }
     
     /*** ROS subscribe initialization ***/
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
@@ -878,64 +897,6 @@ int main(int argc, char** argv)
         status = ros::ok();
         rate.sleep();
     }
-
-    /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. pcd save will largely influence the real-time performences **/
-    // if (pcl_wait_save->size() > 0 && pcd_save_en)
-    // {
-    //     string file_name = string("scans.pcd");
-    //     string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
-    //     pcl::PCDWriter pcd_writer;
-    //     cout << "current scan saved to /PCD/" << file_name<<endl;
-    //     pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-    // }
-    // if(pcd_save_en){
-    //     publish_global_map();
-    //     pcl::PointCloud<PointType>::Ptr raw_map_points(new pcl::PointCloud<PointType>());
-    //     pcl::PointCloud<PointType>::Ptr filtered_map_points(new pcl::PointCloud<PointType>());
-    //     pcl::PointCloud<PointType>::Ptr ground_map_points(new pcl::PointCloud<PointType>());
-    //     {
-    //         std::lock_guard<std::mutex> lock(map_cache_mutex);
-    //         *raw_map_points = *latest_global_map_raw;
-    //         *filtered_map_points = *latest_global_map_filtered;
-    //         *ground_map_points = *latest_ground_map;
-    //     }
-
-    //     const bfs::path map_dir = ensure_map_directory_path();
-    //     if (map_dir.empty())
-    //     {
-    //         ROS_WARN("Unable to save maps: map directory is not available.");
-    //     }
-    //     else
-    //     {
-    //         if (raw_map_points->empty())
-    //         {
-    //             ROS_WARN("Raw map is empty, skip saving Map/*.pcd");
-    //         }
-    //         else
-    //         {
-    //             const bfs::path raw_path = map_dir / "raw_map.pcd";
-    //             pcl::io::savePCDFileBinary(raw_path.string(), *raw_map_points);
-    //             ROS_INFO_STREAM("Raw map saved to " << raw_path.string());
-
-    //             const bfs::path map_path = map_dir / "map.pcd";
-    //             pcl::io::savePCDFileBinary(map_path.string(), *filtered_map_points);
-    //             ROS_INFO_STREAM("Downsampled map saved to " << map_path.string());
-
-    //             if (ground_map_points && !ground_map_points->empty())
-    //             {
-    //                 const bfs::path ground_path = map_dir / "ground_map.pcd";
-    //                 pcl::io::savePCDFileBinary(ground_path.string(), *ground_map_points);
-    //                 ROS_INFO_STREAM("Ground map saved to " << ground_path.string());
-    //             }
-    //             else
-    //             {
-    //                 ROS_WARN("Ground map is empty, skip saving Map/ground_map.pcd");
-    //             }
-    //         }
-    //     }
-    // }// if pcd_save_en
 
     fout_out.close();
     fout_pre.close();

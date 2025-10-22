@@ -4,7 +4,7 @@ project(fast_lio_sam_loop)
 # SET(CMAKE_BUILD_TYPE "Debug")  
 # set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
 
-SET(CMAKE_BUILD_TYPE "Realese")  
+SET(CMAKE_BUILD_TYPE "RELEASE")  
 
 ADD_COMPILE_OPTIONS(-std=c++14 )
 set( CMAKE_CXX_FLAGS "-std=c++14 -O3" )
@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread -std=c++0x -std=c++14 -fexceptions")
+# set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -fno-omit-frame-pointer -fno-optimize-sibling-calls")
 
 message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)" )
