@@ -192,7 +192,7 @@ inline void write_pose_graph_addGPS(const gtsam::Values &estimate , const std::s
                 //          measurement.x(), measurement.y(), measurement.z(),
                 //          information_diag.x(), information_diag.y(), information_diag.z());
             }
-            ROS_INFO("Total GPS edges to append: %zu, keyframeGPSfactor :%zu,gps_index_container: %zu", gps_edges.size(), keyframeGPSfactor.size(), gps_index_container.size());
+            // ROS_INFO("Total GPS edges to append: %zu, keyframeGPSfactor :%zu,gps_index_container: %zu", gps_edges.size(), keyframeGPSfactor.size(), gps_index_container.size());
             // 调用有两次了，可能会有重复添加的问题（maybe）
             if (!gps_edges.empty())
             {
@@ -1513,6 +1513,17 @@ void update_initial_guess()
                 geo_converter.Forward(currentLLA[0], currentLLA[1], currentLLA[2], enu[0], enu[1], enu[2]);
                 ROS_INFO("Origin LLA_______: %f, %f, %f", originLLA[0], originLLA[1], originLLA[2]);
                 ROS_INFO("Current ENU_______: %f, %f, %f", enu[0], enu[1], enu[2]);
+                if(incremental_mode)
+                {
+                    ROS_WARN("GPS init in incremental mode");
+                    state_ikfom init_old_map_state = kf.get_x();
+                    init_old_map_state.pos(0) = enu[0];
+                    init_old_map_state.pos(1) = enu[1];
+                    init_old_map_state.pos(2) = enu[2];
+                    Eigen::Quaterniond q = EulerToQuat(roll, pitch, yaw);
+                    init_old_map_state.rot = q;
+                    kf.change_x(init_old_map_state);
+                }
                 if (!incremental_mode || !origin_previously_loaded)
                 {
                     const bfs::path map_dir = ensure_map_directory_path();
