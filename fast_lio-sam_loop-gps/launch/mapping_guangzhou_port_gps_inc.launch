@@ -1,6 +1,6 @@
 <launch>
+  <arg name="old_map" default="/home/glf/Map/test_fastlio/p_two_c/Map/"/>
   <!-- <arg name="old_map" default="/home/glf/Map/test_fastlio/Map/"/> -->
-  <arg name="old_map" default="/home/glf/Map/test_fastlio/half/Map/"/>
   <arg name="rviz" default="true" />
   <arg name="use_sim_time" default="true" />
   <arg name="record_bag" default="false" />

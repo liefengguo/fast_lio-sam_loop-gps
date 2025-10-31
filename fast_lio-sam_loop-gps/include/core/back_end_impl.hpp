@@ -1520,7 +1520,14 @@ void update_initial_guess()
                     init_old_map_state.pos(0) = enu[0];
                     init_old_map_state.pos(1) = enu[1];
                     init_old_map_state.pos(2) = enu[2];
-                    Eigen::Quaterniond q = EulerToQuat(roll, pitch, yaw);
+                    Eigen::Quaterniond q;
+                    if(!manual_gps_init){
+                        q = EulerToQuat(roll, pitch, yaw);
+                        ROS_INFO("GPS init with yaw: %f", yaw);
+                    }else{
+                        q = EulerToQuat(roll, pitch, manual_init_yaw);
+                        ROS_INFO("Manual GPS init with yaw: %f", manual_init_yaw);
+                    }
                     init_old_map_state.rot = q;
                     kf.change_x(init_old_map_state);
                 }
