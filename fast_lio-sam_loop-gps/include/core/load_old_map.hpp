@@ -519,8 +519,8 @@ bool LoadMap_gtsam(const std::string &map_path)
             isam->update(locking_factors, gtsam::Values());
         }
         isam->update();
-        isam_current_estimate = isam->calculateEstimate();
-        correct_Tmo = gtsam::Pose3();
+        // isam_current_estimate = isam->calculateEstimate(); // 没必要得到当前估计，又不是要从这位置继续建图
+        // correct_Tmo = gtsam::Pose3();
     }
     catch (const std::exception &e)
     {

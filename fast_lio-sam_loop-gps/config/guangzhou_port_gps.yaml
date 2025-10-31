@@ -79,8 +79,8 @@ gps:
     gps_cov_threshold: 8
     pose_cov_threshold: 25.0
     gps_distance: 0.5
-    manual_gps_init: true  
-    manual_init_yaw: 2.8  # 目前1.70931比1.76要好  0： 1.70931  12：1.41  13 ：1.46
+    manual_gps_init: false   
+    manual_init_yaw: -2.5  # 目前1.70931比1.76要好  0： 1.70931  12：1.41  13 ：1.46  p11 :3.14
 
 visualization:
     global_map_visualization_search_radius: 1000.0
